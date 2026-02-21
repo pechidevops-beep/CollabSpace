@@ -1,0 +1,824 @@
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useAuth } from '../../../context/AuthContext';
+import FileTree from '../components/FileTree';
+import CodeEditor from '../components/CodeEditor';
+import JSZip from 'jszip';
+import { executeCode, isLanguageSupported } from '../../../services/codeExecutionService';
+import {
+    createRepositoryFile,
+    createRepositoryFolder,
+    deleteRepositoryFile,
+    getRepositoryById,
+    getRepositoryFiles,
+    renameRepositoryFile,
+} from '../../../services/repositoryService';
+import {
+    createCommit,
+    getCommitHistory,
+    getCommitFiles,
+    restoreCommitSnapshot,
+    updateFileContent,
+} from '../../../services/editorService';
+import { buildFileTree, buildFilePathMap, detectLanguage } from '../../../utils/repository';
+import {
+    Save, Download, FolderDown, Plus, GitCommit,
+    X, Circle, History, Play, Terminal, ChevronDown, ChevronUp, Loader2,
+    RotateCcw, FileCode, ChevronRight, User, Lock,
+} from 'lucide-react';
+import { usePermissions } from '../../../hooks/usePermissions';
+
+export default function EditorPage() {
+    const { repoId, workspaceId } = useParams();
+    const { user } = useAuth();
+    const { canEditFiles, canCommit } = usePermissions(workspaceId);
+
+    const [repository, setRepository] = useState(null);
+    const [files, setFiles] = useState([]);
+    const [tree, setTree] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    // Tabs
+    const [openTabs, setOpenTabs] = useState([]);
+    const [activeTabId, setActiveTabId] = useState(null);
+    const [tabContents, setTabContents] = useState({});
+    const [dirtyTabs, setDirtyTabs] = useState(new Set());
+
+    // Saving
+    const [saving, setSaving] = useState(false);
+    const [savedMessage, setSavedMessage] = useState('');
+
+    // File creation
+    const [fileFormOpen, setFileFormOpen] = useState(false);
+    const [fileFormParentId, setFileFormParentId] = useState(null);
+    const [fileFormType, setFileFormType] = useState('file');
+    const [newItemName, setNewItemName] = useState('');
+    const [createError, setCreateError] = useState('');
+    const [creating, setCreating] = useState(false);
+
+    // Commits
+    const [commits, setCommits] = useState([]);
+    const [commitsOpen, setCommitsOpen] = useState(false);
+    const [commitDialogOpen, setCommitDialogOpen] = useState(false);
+    const [commitMessage, setCommitMessage] = useState('');
+    const [committing, setCommitting] = useState(false);
+
+    // Download
+    const [downloadingFile, setDownloadingFile] = useState(false);
+
+    // Commit history detail
+    const [expandedCommitId, setExpandedCommitId] = useState(null);
+    const [commitFilesList, setCommitFilesList] = useState([]);
+    const [commitFilesLoading, setCommitFilesLoading] = useState(false);
+    const [restoringCommitId, setRestoringCommitId] = useState(null);
+
+    // Code execution state
+    const [running, setRunning] = useState(false);
+    const [executionOutput, setExecutionOutput] = useState(null);
+    const [showOutput, setShowOutput] = useState(false);
+    const outputRef = useRef(null);
+    const [downloadingRepo, setDownloadingRepo] = useState(false);
+
+    const buildSnapshotFiles = useCallback(() => (
+        files.map((file) => {
+            if (file.type !== 'file') return file;
+            return {
+                ...file,
+                content: tabContents[file.id] ?? file.content ?? '',
+            };
+        })
+    ), [files, tabContents]);
+
+    const pathMap = useMemo(() => buildFilePathMap(files), [files]);
+
+    /* ── Load data ── */
+    useEffect(() => {
+        if (!repoId) { setLoading(false); return; }
+        const load = async () => {
+            setLoading(true);
+            setError('');
+            try {
+                const [repo, fileData] = await Promise.all([
+                    getRepositoryById(repoId),
+                    getRepositoryFiles(repoId),
+                ]);
+                setRepository(repo);
+                setFiles(fileData);
+                setTree(buildFileTree(fileData));
+
+                const firstFile = fileData.find(f => f.type === 'file');
+                if (firstFile) {
+                    setOpenTabs([{ id: firstFile.id, name: firstFile.name }]);
+                    setActiveTabId(firstFile.id);
+                    setTabContents({ [firstFile.id]: firstFile.content ?? '' });
+                }
+            } catch (e) {
+                setError(e.message || 'Failed to load editor');
+            }
+            setLoading(false);
+        };
+        load();
+    }, [repoId]);
+
+    useEffect(() => {
+        if (!repoId) return;
+        getCommitHistory(repoId).then(setCommits).catch(() => { });
+    }, [repoId]);
+
+    useEffect(() => {
+        setTree(buildFileTree(files));
+    }, [files]);
+
+    const handleSelectFile = useCallback((fileId) => {
+        const file = files.find(f => f.id === fileId);
+        if (!file || file.type === 'folder') return;
+        setOpenTabs(prev => {
+            if (prev.some(t => t.id === fileId)) return prev;
+            return [...prev, { id: fileId, name: file.name }];
+        });
+        setActiveTabId(fileId);
+        setTabContents(prev => {
+            if (prev[fileId] !== undefined) return prev;
+            return { ...prev, [fileId]: file.content ?? '' };
+        });
+    }, [files]);
+
+    const handleContentChange = useCallback((value) => {
+        if (!activeTabId) return;
+        setTabContents(prev => ({ ...prev, [activeTabId]: value }));
+        setDirtyTabs(prev => new Set(prev).add(activeTabId));
+        setSavedMessage('');
+    }, [activeTabId]);
+
+    const handleCloseTab = useCallback((tabId, e) => {
+        e?.stopPropagation();
+        setOpenTabs(prev => {
+            const next = prev.filter(t => t.id !== tabId);
+            if (activeTabId === tabId) {
+                const idx = prev.findIndex(t => t.id === tabId);
+                const newActive = next[Math.min(idx, next.length - 1)]?.id || null;
+                setActiveTabId(newActive);
+            }
+            return next;
+        });
+        setTabContents(prev => { const c = { ...prev }; delete c[tabId]; return c; });
+        setDirtyTabs(prev => { const n = new Set(prev); n.delete(tabId); return n; });
+    }, [activeTabId]);
+
+    const handleSave = async () => {
+        if (!activeTabId) return;
+        setSaving(true);
+        setSavedMessage('');
+        try {
+            const updated = await updateFileContent({
+                fileId: activeTabId,
+                content: tabContents[activeTabId] ?? '',
+                actorId: user?.id || null,
+            });
+            setFiles(prev => prev.map(f => f.id === updated.id ? updated : f));
+            setDirtyTabs(prev => { const n = new Set(prev); n.delete(activeTabId); return n; });
+            setSavedMessage('Saved');
+            setTimeout(() => setSavedMessage(''), 1500);
+
+            if (user?.id) {
+                const commit = await createCommit({
+                    repositoryId: repoId,
+                    message: `Auto save: ${updated.name || 'file'}`,
+                    createdBy: user.id,
+                    files: buildSnapshotFiles(),
+                });
+                setCommits(prev => [commit, ...prev]);
+            }
+        } catch (e) {
+            setError(e.message || 'Failed to save');
+        }
+        setSaving(false);
+    };
+
+    const handleCommit = async (e) => {
+        e?.preventDefault();
+        if (!commitMessage.trim() || !user) return;
+        setCommitting(true);
+        try {
+            for (const dirtyId of dirtyTabs) {
+                const content = tabContents[dirtyId];
+                if (content !== undefined) {
+                    const updated = await updateFileContent({
+                        fileId: dirtyId,
+                        content,
+                        actorId: user?.id || null,
+                    });
+                    setFiles(prev => prev.map(f => f.id === updated.id ? updated : f));
+                }
+            }
+            setDirtyTabs(new Set());
+
+            const commit = await createCommit({
+                repositoryId: repoId,
+                message: commitMessage.trim(),
+                createdBy: user.id,
+                files: buildSnapshotFiles(),
+            });
+            setCommits(prev => [commit, ...prev]);
+            setCommitMessage('');
+            setCommitDialogOpen(false);
+        } catch (e) {
+            setError(e.message || 'Failed to commit');
+        }
+        setCommitting(false);
+    };
+
+    const handleCreateFile = useCallback((parentId) => {
+        setFileFormParentId(parentId);
+        setFileFormType('file');
+        setFileFormOpen(true);
+        setCreateError('');
+        setNewItemName('');
+    }, []);
+
+    const handleCreateFolder = useCallback((parentId) => {
+        setFileFormParentId(parentId);
+        setFileFormType('folder');
+        setFileFormOpen(true);
+        setCreateError('');
+        setNewItemName('');
+    }, []);
+
+    const handleCreateSubmit = async (e) => {
+        e.preventDefault();
+        const name = newItemName.trim();
+        if (!name) { setCreateError('Name is required.'); return; }
+
+        const siblings = files.filter(f =>
+            (f.parent_id || null) === (fileFormParentId || null) &&
+            f.repository_id === repoId
+        );
+        if (siblings.some(f => f.name?.toLowerCase() === name.toLowerCase())) {
+            setCreateError('An item with that name already exists here.');
+            return;
+        }
+
+        setCreating(true);
+        setCreateError('');
+        try {
+            let newItem;
+            if (fileFormType === 'folder') {
+                newItem = await createRepositoryFolder({
+                    repoId,
+                    name,
+                    parentId: fileFormParentId,
+                    createdBy: user?.id || null,
+                });
+            } else {
+                newItem = await createRepositoryFile({
+                    repoId,
+                    name,
+                    parentId: fileFormParentId,
+                    createdBy: user?.id || null,
+                });
+            }
+            setFiles(prev => [...prev, newItem]);
+            if (fileFormType === 'file') {
+                handleSelectFile(newItem.id);
+                setTabContents(prev => ({ ...prev, [newItem.id]: '' }));
+            }
+            setFileFormOpen(false);
+            setNewItemName('');
+        } catch (e) {
+            setCreateError(e.message || 'Failed to create.');
+        }
+        setCreating(false);
+    };
+
+    const handleRename = useCallback(async (fileId, newName) => {
+        try {
+            const updated = await renameRepositoryFile({ fileId, newName, actorId: user?.id || null });
+            setFiles(prev => prev.map(f => f.id === updated.id ? updated : f));
+            setOpenTabs(prev => prev.map(t => t.id === updated.id ? { ...t, name: updated.name } : t));
+        } catch (e) {
+            setError(e.message || 'Rename failed');
+        }
+    }, []);
+
+    const handleDelete = useCallback(async (fileId) => {
+        const file = files.find(f => f.id === fileId);
+        if (!file) return;
+        const confirmed = window.confirm(`Delete "${file.name}"? ${file.type === 'folder' ? 'This will also delete all files inside.' : ''}`);
+        if (!confirmed) return;
+        try {
+            await deleteRepositoryFile({ fileId, actorId: user?.id || null });
+            const idsToRemove = new Set();
+            const collect = (id) => {
+                idsToRemove.add(id);
+                files.filter(f => f.parent_id === id).forEach(child => collect(child.id));
+            };
+            collect(fileId);
+            setFiles(prev => prev.filter(f => !idsToRemove.has(f.id)));
+            setOpenTabs(prev => prev.filter(t => !idsToRemove.has(t.id)));
+            if (idsToRemove.has(activeTabId)) {
+                setActiveTabId(openTabs.find(t => !idsToRemove.has(t.id))?.id || null);
+            }
+        } catch (e) {
+            setError(e.message || 'Delete failed');
+        }
+    }, [files, activeTabId, openTabs]);
+
+    const handleDownloadCurrentFile = () => {
+        if (!activeTabId) return;
+        const file = files.find(f => f.id === activeTabId);
+        if (!file) return;
+        setDownloadingFile(true);
+        try {
+            const blob = new Blob([tabContents[activeTabId] ?? ''], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name || 'file.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } finally {
+            setDownloadingFile(false);
+        }
+    };
+
+    const handleDownloadRepo = async () => {
+        if (!repository || files.length === 0) return;
+        setDownloadingRepo(true);
+        try {
+            const zip = new JSZip();
+            const getPath = (fileId) => {
+                const f = files.find(x => x.id === fileId);
+                if (!f) return '';
+                if (f.parent_id) return getPath(f.parent_id) + '/' + f.name;
+                return f.name;
+            };
+            files.filter(f => f.type === 'file').forEach(f => {
+                zip.file(getPath(f.id), f.content ?? '');
+            });
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${repository.name || 'repository'}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            setError('Failed to create zip.');
+        } finally {
+            setDownloadingRepo(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-slate-500">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                    Loading editor…
+                </div>
+            </div>
+        );
+    }
+
+    if (!repository) {
+        return (
+            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-slate-500">
+                Repository not found.
+            </div>
+        );
+    }
+
+    const activeFile = files.find(f => f.id === activeTabId);
+    const activePath = activeFile ? pathMap.get(activeFile.id) : '';
+    const currentContent = activeTabId ? (tabContents[activeTabId] ?? '') : '';
+    const currentLanguage = activeFile ? detectLanguage(activeFile.name) : 'plaintext';
+
+    return (
+        <div className="flex h-[calc(100vh-80px)] flex-col gap-0">
+            {/* Top toolbar */}
+            <div className="flex items-center justify-between bg-slate-900/80 border-b border-slate-800 px-3 py-1.5 text-xs text-slate-400 shrink-0">
+                <div className="flex items-center gap-2">
+                    <Link
+                        to={`/app/workspace/${workspaceId}`}
+                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 hover:border-slate-500 hover:text-slate-100 transition"
+                    >
+                        ← Back
+                    </Link>
+                    <div className="flex flex-col">
+                        <span className="text-sm font-medium text-slate-200">{repository.name}</span>
+                        {repository.visibility && (
+                            <span className={`text-[10px] ${repository.visibility === 'private' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                {repository.visibility}
+                            </span>
+                        )}
+                        {activePath && (
+                            <span className="text-[10px] text-slate-500">{activePath}</span>
+                        )}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {savedMessage && <span className="text-[11px] text-emerald-400">{savedMessage}</span>}
+                    {error && <span className="text-[11px] text-rose-400 max-w-[200px] truncate">{error}</span>}
+                    <button onClick={() => setCommitDialogOpen(true)} disabled={!canCommit} className="btn-editor" title={canCommit ? 'Commit changes' : 'No permission to commit'}>
+                        <GitCommit size={13} /> Commit
+                    </button>
+                    <button onClick={() => setCommitsOpen(prev => !prev)} className="btn-editor" title="History">
+                        <History size={13} /> {commits.length}
+                    </button>
+                    <button onClick={handleDownloadCurrentFile} disabled={!activeTabId || downloadingFile} className="btn-editor" title="Download file">
+                        <Download size={13} />
+                    </button>
+                    <button onClick={handleDownloadRepo} disabled={downloadingRepo || files.length === 0} className="btn-editor" title="Download repo">
+                        <FolderDown size={13} />
+                    </button>
+                    <button onClick={handleSave} disabled={!activeTabId || saving || !canEditFiles} className="btn-editor-primary" title={canEditFiles ? 'Save' : 'No permission to save'}>
+                        {!canEditFiles ? <Lock size={13} /> : <Save size={13} />} {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <div className="w-px h-4 bg-slate-700" />
+                    <button
+                        onClick={async () => {
+                            if (!activeTabId || running) return;
+                            const file = files.find(f => f.id === activeTabId);
+                            if (!file) return;
+                            const lang = file.name || currentLanguage;
+                            if (!isLanguageSupported(lang)) {
+                                setExecutionOutput({ stdout: '', stderr: `Language not supported for execution: ${lang}`, exitCode: 1, language: lang, version: '' });
+                                setShowOutput(true);
+                                return;
+                            }
+                            setRunning(true);
+                            setShowOutput(true);
+                            setExecutionOutput(null);
+                            try {
+                                const result = await executeCode({ code: currentContent, language: lang });
+                                setExecutionOutput(result);
+                            } catch (err) {
+                                setExecutionOutput({ stdout: '', stderr: err.message, exitCode: 1, language: lang, version: '' });
+                            }
+                            setRunning(false);
+                            setTimeout(() => { if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }, 100);
+                        }}
+                        disabled={!activeTabId || running}
+                        className="btn-editor-primary !bg-emerald-600 hover:!bg-emerald-500 disabled:!bg-emerald-800 disabled:!text-emerald-400"
+                        title="Run code"
+                    >
+                        {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                        {running ? 'Running…' : 'Run'}
+                    </button>
+                </div>
+            </div>
+
+            {/* Commit dialog */}
+            {commitDialogOpen && (
+                <div className="bg-slate-900/95 border-b border-slate-800 px-4 py-3 shrink-0 animate-fade-in">
+                    <form onSubmit={handleCommit} className="flex items-center gap-3">
+                        <GitCommit size={16} className="text-brand-400 shrink-0" />
+                        <input
+                            autoFocus
+                            value={commitMessage}
+                            onChange={e => setCommitMessage(e.target.value)}
+                            placeholder="Commit message (e.g. 'Add login component')"
+                            className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-brand-500"
+                        />
+                        <button type="submit" disabled={committing || !commitMessage.trim()} className="btn-editor-primary">
+                            {committing ? 'Committing…' : 'Commit All'}
+                        </button>
+                        <button type="button" onClick={() => setCommitDialogOpen(false)} className="btn-editor">
+                            Cancel
+                        </button>
+                    </form>
+                </div>
+            )}
+
+            {/* Create file/folder form */}
+            {fileFormOpen && (
+                <div className="bg-slate-900/95 border-b border-slate-800 px-4 py-3 shrink-0 animate-fade-in">
+                    <form onSubmit={handleCreateSubmit} className="flex items-center gap-3">
+                        <span className="text-[11px] text-slate-400">New {fileFormType}:</span>
+                        <input
+                            autoFocus
+                            value={newItemName}
+                            onChange={e => setNewItemName(e.target.value)}
+                            placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.ext'}
+                            className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-brand-500 font-mono"
+                        />
+                        <button type="submit" disabled={creating || !newItemName.trim()} className="btn-editor-primary">
+                            {creating ? 'Creating…' : 'Create'}
+                        </button>
+                        <button type="button" onClick={() => setFileFormOpen(false)} className="btn-editor">
+                            Cancel
+                        </button>
+                    </form>
+                    {createError && <p className="text-[11px] text-rose-400 mt-1 ml-14">{createError}</p>}
+                </div>
+            )}
+
+            {/* Main content */}
+            <div className="flex flex-1 min-h-0">
+                {/* File tree */}
+                <div className="w-60 shrink-0 border-r border-slate-800">
+                    <FileTree
+                        tree={tree}
+                        currentFileId={activeTabId}
+                        onSelectFile={handleSelectFile}
+                        onCreateFile={handleCreateFile}
+                        onCreateFolder={handleCreateFolder}
+                        onRename={handleRename}
+                        onDelete={handleDelete}
+                    />
+                </div>
+
+                {/* Editor area */}
+                <div className="flex flex-1 flex-col min-w-0">
+                    {openTabs.length > 0 && (
+                        <div className="flex bg-slate-900/60 border-b border-slate-800 overflow-x-auto shrink-0 custom-scrollbar">
+                            {openTabs.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTabId(tab.id)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-r border-slate-800 shrink-0 transition-colors ${tab.id === activeTabId
+                                        ? 'bg-slate-950 text-white border-b-2 border-b-brand-500'
+                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                                        }`}
+                                >
+                                    {dirtyTabs.has(tab.id) && (
+                                        <Circle size={6} className="text-amber-400 fill-amber-400" />
+                                    )}
+                                    <span>{tab.name}</span>
+                                    <span
+                                        onClick={(e) => handleCloseTab(tab.id, e)}
+                                        className="ml-1 p-0.5 rounded hover:bg-slate-700 text-slate-500 hover:text-white"
+                                    >
+                                        <X size={10} />
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="flex-1 min-h-0 flex flex-col">
+                        <div className={`${showOutput ? 'flex-1 min-h-0' : 'flex-1'}`} style={showOutput ? { flex: '1 1 60%' } : {}}>
+                            {activeTabId ? (
+                                <CodeEditor
+                                    language={currentLanguage}
+                                    value={currentContent}
+                                    onChange={handleContentChange}
+                                />
+                            ) : (
+                                <div className="flex h-full items-center justify-center text-xs text-slate-500">
+                                    <div className="text-center space-y-2">
+                                        <p>Select a file to begin editing</p>
+                                        <p className="text-[10px] text-slate-600">or create a new file with the + button</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Output Terminal Panel */}
+                        {showOutput && (
+                            <div className="border-t border-slate-700 flex flex-col" style={{ flex: '0 0 40%', minHeight: '120px', maxHeight: '50%' }}>
+                                <div className="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 border-b border-slate-800 shrink-0">
+                                    <div className="flex items-center gap-2 text-[11px]">
+                                        <Terminal size={13} className="text-emerald-400" />
+                                        <span className="font-medium text-slate-300">Output</span>
+                                        {executionOutput && (
+                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${executionOutput.exitCode === 0
+                                                ? 'bg-emerald-500/10 text-emerald-400'
+                                                : 'bg-rose-500/10 text-rose-400'
+                                                }`}>
+                                                exit: {executionOutput.exitCode}
+                                            </span>
+                                        )}
+                                        {executionOutput?.language && (
+                                            <span className="text-[9px] text-slate-500">
+                                                {executionOutput.language} {executionOutput.version}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => setExecutionOutput(null)}
+                                            className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800 text-[10px]"
+                                            title="Clear output"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => setShowOutput(false)}
+                                            className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800"
+                                            title="Close panel"
+                                        >
+                                            <X size={13} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div
+                                    ref={outputRef}
+                                    className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-slate-950/80"
+                                >
+                                    {running ? (
+                                        <div className="flex items-center gap-2 text-slate-400">
+                                            <Loader2 size={14} className="animate-spin text-brand-400" />
+                                            <span>Executing code…</span>
+                                        </div>
+                                    ) : executionOutput ? (
+                                        <div className="space-y-2">
+                                            {executionOutput.stdout && (
+                                                <pre className="text-emerald-300 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stdout}</pre>
+                                            )}
+                                            {executionOutput.stderr && (
+                                                <pre className="text-rose-400 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stderr}</pre>
+                                            )}
+                                            {!executionOutput.stdout && !executionOutput.stderr && (
+                                                <span className="text-slate-500 italic">No output</span>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <span className="text-slate-500 italic">Click Run to execute the current file</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Commit history sidebar */}
+                {commitsOpen && (
+                    <div className="w-80 shrink-0 border-l border-slate-800 bg-slate-950/80 flex flex-col">
+                        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800">
+                            <div className="flex items-center gap-2">
+                                <History size={14} className="text-brand-400" />
+                                <span className="text-[12px] font-semibold text-slate-200">Commit History</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                                    {commits.length}
+                                </span>
+                            </div>
+                            <button onClick={() => setCommitsOpen(false)} className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800">
+                                <X size={14} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            {commits.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                                    <GitCommit size={28} className="text-slate-700 mb-3" />
+                                    <p className="text-[12px] text-slate-500">No commits yet</p>
+                                    <p className="text-[10px] text-slate-600 mt-1">Save your work to create the first commit</p>
+                                </div>
+                            ) : (
+                                <div className="relative">
+                                    {/* Timeline line */}
+                                    <div className="absolute left-[19px] top-0 bottom-0 w-px bg-slate-800" />
+
+                                    {commits.map((c, idx) => {
+                                        const isExpanded = expandedCommitId === c.id;
+                                        const isRestoring = restoringCommitId === c.id;
+                                        const fileCount = c.snapshot ? Object.keys(c.snapshot).length : 0;
+                                        const isAutoSave = c.message?.startsWith('Auto save:');
+
+                                        return (
+                                            <div key={c.id} className="relative">
+                                                {/* Timeline dot */}
+                                                <div className="absolute left-[15px] top-[18px] z-10">
+                                                    <div className={`w-[9px] h-[9px] rounded-full border-2 ${idx === 0
+                                                        ? 'bg-brand-500 border-brand-400'
+                                                        : isAutoSave
+                                                            ? 'bg-slate-700 border-slate-600'
+                                                            : 'bg-slate-800 border-slate-600'
+                                                        }`} />
+                                                </div>
+
+                                                <div
+                                                    className={`ml-10 mr-2 my-1 p-2.5 rounded-lg border transition-all cursor-pointer ${isExpanded
+                                                        ? 'bg-slate-900/80 border-brand-500/30'
+                                                        : 'bg-slate-900/40 border-slate-800/50 hover:border-slate-700 hover:bg-slate-900/60'
+                                                        }`}
+                                                    onClick={async () => {
+                                                        if (isExpanded) {
+                                                            setExpandedCommitId(null);
+                                                            setCommitFilesList([]);
+                                                            return;
+                                                        }
+                                                        setExpandedCommitId(c.id);
+                                                        setCommitFilesLoading(true);
+                                                        try {
+                                                            const files = await getCommitFiles(c.id);
+                                                            setCommitFilesList(files);
+                                                        } catch {
+                                                            setCommitFilesList([]);
+                                                        }
+                                                        setCommitFilesLoading(false);
+                                                    }}
+                                                >
+                                                    {/* Commit header */}
+                                                    <div className="flex items-start gap-2">
+                                                        <ChevronRight
+                                                            size={12}
+                                                            className={`text-slate-500 mt-0.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''
+                                                                }`}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className={`text-[12px] leading-snug break-words ${isAutoSave ? 'text-slate-400 italic' : 'text-slate-200 font-medium'
+                                                                }`}>
+                                                                {c.message}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                                {c.author_name && (
+                                                                    <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                                                                        <User size={9} /> {c.author_name}
+                                                                    </span>
+                                                                )}
+                                                                <span className="text-[10px] text-slate-600">
+                                                                    {new Date(c.created_at).toLocaleDateString()} {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                                {fileCount > 0 && (
+                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                                                                        {fileCount} file{fileCount !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Expanded: file list + restore */}
+                                                    {isExpanded && (
+                                                        <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-2 animate-fade-in" onClick={e => e.stopPropagation()}>
+                                                            {/* Files in this commit */}
+                                                            {commitFilesLoading ? (
+                                                                <div className="flex items-center gap-2 text-[10px] text-slate-500 py-1">
+                                                                    <Loader2 size={10} className="animate-spin" /> Loading files…
+                                                                </div>
+                                                            ) : commitFilesList.length > 0 ? (
+                                                                <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
+                                                                    {commitFilesList.map(cf => (
+                                                                        <div key={cf.id || cf.file_id} className="flex items-center gap-2 text-[10px] text-slate-400 py-0.5 px-1 rounded hover:bg-slate-800/50">
+                                                                            <FileCode size={10} className="text-slate-600 shrink-0" />
+                                                                            <span className="truncate">{cf.file_path || cf.file_name}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-[10px] text-slate-600 italic">No file details available</p>
+                                                            )}
+
+                                                            {/* Restore button */}
+                                                            <button
+                                                                disabled={isRestoring}
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (!window.confirm(`Restore all files to this commit?\n\n"${c.message}"\n\nThis will overwrite current file contents.`)) return;
+                                                                    setRestoringCommitId(c.id);
+                                                                    try {
+                                                                        const updatedFiles = await restoreCommitSnapshot({
+                                                                            commitId: c.id,
+                                                                            repositoryId: repoId,
+                                                                            actorId: user?.id || null,
+                                                                        });
+                                                                        // Refresh files state
+                                                                        setFiles(prev => prev.map(f => {
+                                                                            const updated = updatedFiles.find(u => u.id === f.id);
+                                                                            return updated || f;
+                                                                        }));
+                                                                        // Clear tab contents so they reload from fresh data
+                                                                        setTabContents(prev => {
+                                                                            const next = { ...prev };
+                                                                            updatedFiles.forEach(u => {
+                                                                                if (next[u.id] !== undefined) {
+                                                                                    next[u.id] = u.content ?? '';
+                                                                                }
+                                                                            });
+                                                                            return next;
+                                                                        });
+                                                                        setDirtyTabs(new Set());
+                                                                    } catch (err) {
+                                                                        setError(err.message || 'Restore failed');
+                                                                    }
+                                                                    setRestoringCommitId(null);
+                                                                }}
+                                                                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 transition-colors disabled:opacity-50"
+                                                            >
+                                                                {isRestoring ? (
+                                                                    <><Loader2 size={10} className="animate-spin" /> Restoring…</>
+                                                                ) : (
+                                                                    <><RotateCcw size={10} /> Restore this version</>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
