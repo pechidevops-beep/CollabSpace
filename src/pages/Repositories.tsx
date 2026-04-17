@@ -3,6 +3,7 @@ import {
   Plus, FolderGit2, Lock, Globe, FileCode2, GitCommitHorizontal,
   ArrowLeft, Copy, Check, Clock, TerminalSquare, ChevronRight,
   Folder, FileText, Code2, Eye, Upload, Download, Trash2, X, Settings,
+  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,13 @@ type Commit = {
   author_email: string;
   hash: string;
   created_at: string;
+};
+
+type Branch = {
+  id: string | null;
+  name: string;
+  created_at: string | null;
+  isDefault?: boolean;
 };
 
 type RepoFile = {
@@ -300,10 +308,15 @@ function RepoDetail({
   onOpenEditor: () => void;
 }) {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"code" | "commits" | "setup">("code");
+  const [tab, setTab] = useState<"code" | "commits" | "branches" | "setup">("code");
   const [copied, setCopied] = useState(false);
   const [viewingFile, setViewingFile] = useState<RepoFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Branch state
+  const [newBranchName, setNewBranchName] = useState("");
+  const [fromBranch, setFromBranch] = useState("main");
+  const [showNewBranch, setShowNewBranch] = useState(false);
 
   const { data: files = [], refetch: refetchFiles } = useQuery({
     queryKey: ["repo-files", repo.id],
@@ -313,6 +326,32 @@ function RepoDetail({
   const { data: commits = [] } = useQuery({
     queryKey: ["commits", repo.id],
     queryFn: () => apiFetch<Commit[]>(`/commits?repoId=${repo.id}`),
+  });
+
+  const { data: branches = [], refetch: refetchBranches } = useQuery({
+    queryKey: ["branches", repo.id],
+    queryFn: () => apiFetch<Branch[]>(`/branches?repoId=${repo.id}`),
+  });
+
+  const createBranch = useMutation({
+    mutationFn: () =>
+      apiFetch("/branches", {
+        method: "POST",
+        body: JSON.stringify({ repoId: repo.id, name: newBranchName, fromBranch }),
+      }),
+    onSuccess: () => {
+      toast.success(`Branch '${newBranchName}' created!`);
+      setNewBranchName("");
+      setShowNewBranch(false);
+      refetchBranches();
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Create failed"),
+  });
+
+  const deleteBranch = useMutation({
+    mutationFn: (branchId: string) => apiFetch(`/branches/${branchId}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Branch deleted"); refetchBranches(); },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
   const deleteFile = useMutation({
@@ -386,14 +425,15 @@ function RepoDetail({
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b border-border">
+      <div className="flex border-b border-border overflow-x-auto">
         {[
           { key: "code", label: "Code", icon: Code2 },
           { key: "commits", label: `Commits (${commits.length})`, icon: GitCommitHorizontal },
+          { key: "branches", label: `Branches (${branches.length})`, icon: GitBranch },
           { key: "setup", label: "Setup", icon: TerminalSquare },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors border-b-2 ${tab === key ? "border-primary text-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors border-b-2 whitespace-nowrap ${tab === key ? "border-primary text-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             onClick={() => setTab(key as typeof tab)}>
             <Icon className="h-3.5 w-3.5" /> {label}
           </button>
@@ -503,6 +543,122 @@ function RepoDetail({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─── Branches Tab ─── */}
+      {tab === "branches" && (
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Manage branches for this repository. Create a new branch to work on features without affecting <code className="text-primary bg-primary/10 px-1.5 py-0.5 rounded text-xs">main</code>.
+            </p>
+            <Button
+              size="sm"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shrink-0"
+              onClick={() => setShowNewBranch(!showNewBranch)}
+            >
+              <Plus className="h-4 w-4" /> New Branch
+            </Button>
+          </div>
+
+          {/* Create branch form */}
+          <AnimatePresence>
+            {showNewBranch && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <GitBranch className="h-4 w-4 text-primary" /> Create a new branch
+                  </h3>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <div className="space-y-1.5 flex-1 min-w-[180px]">
+                      <label className="text-xs text-muted-foreground">Branch name</label>
+                      <input
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        placeholder="e.g. feature/login"
+                        value={newBranchName}
+                        onChange={(e) => setNewBranchName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-muted-foreground">Fork from</label>
+                      <select
+                        className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        value={fromBranch}
+                        onChange={(e) => setFromBranch(e.target.value)}
+                      >
+                        {branches.map((b) => (
+                          <option key={b.name} value={b.name}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <Button
+                      className="gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
+                      onClick={() => createBranch.mutate()}
+                      disabled={createBranch.isPending || !newBranchName.trim()}
+                    >
+                      <GitBranch className="h-4 w-4" /> Create branch
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Branch name can contain letters, numbers, <code className="text-primary">-</code>, <code className="text-primary">_</code>, <code className="text-primary">/</code>, <code className="text-primary">.</code>
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Branch list */}
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            {branches.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                No branches yet — the default <code className="text-primary">main</code> branch is always available.
+              </div>
+            ) : (
+              branches.map((branch, i) => (
+                <div
+                  key={branch.name}
+                  className={`flex items-center justify-between px-4 py-3 hover:bg-secondary/30 transition-colors ${
+                    i < branches.length - 1 ? "border-b border-border/50" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <GitBranch className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-mono text-sm text-foreground">{branch.name}</span>
+                    {(branch.isDefault || branch.name === "main") && (
+                      <span className="text-[10px] bg-emerald-400/10 text-emerald-400 border border-emerald-400/30 px-1.5 py-0.5 rounded font-medium">default</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {branch.created_at && (
+                      <span className="text-xs text-muted-foreground hidden sm:block">{timeAgo(branch.created_at)}</span>
+                    )}
+                    {!branch.isDefault && branch.name !== "main" && branch.id && (
+                      <button
+                        className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400"
+                        title="Delete branch"
+                        onClick={() => {
+                          if (confirm(`Delete branch '${branch.name}'?`)) deleteBranch.mutate(branch.id!);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Tip */}
+          <div className="rounded-lg bg-primary/5 border border-primary/20 px-4 py-3 text-sm text-muted-foreground flex items-start gap-2">
+            <GitBranch className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+            <span>
+              After creating a branch, go to <span className="text-primary font-medium">Pull Requests</span> to open a PR from one branch into another.
+              You can also switch branches using the CLI: <code className="text-primary bg-primary/10 px-1.5 py-0.5 rounded text-xs">collab checkout &lt;branch-name&gt;</code>
+            </span>
+          </div>
         </div>
       )}
 
@@ -679,7 +835,12 @@ const Repositories = () => {
       repos={repos}
       workspaceId={workspaceId}
       isAdmin={isAdmin}
-      onOpenRepo={(repo) => setSelectedRepo(repo)}
+      onOpenRepo={(repo) => {
+        // Always update activeRepo so Pull Requests page picks it up
+        localStorage.setItem("activeRepoId", repo.id);
+        localStorage.setItem("activeRepoName", repo.name);
+        setSelectedRepo(repo);
+      }}
       onOpenEditor={openEditor}
     />
   );

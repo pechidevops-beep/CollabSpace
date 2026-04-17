@@ -196,91 +196,124 @@ export default function Terminal({ repoId, language, wsBaseUrl, runTrigger, entr
         };
     }, []);
 
-    // ── WebSocket connection ─────────────────────────────────────────────
+    // ── Store latest prop values in refs (avoid effect re-runs) ────────
+    const languageRef = useRef(language);
+    languageRef.current = language;
+    const wsBaseUrlRef = useRef(wsBaseUrl);
+    wsBaseUrlRef.current = wsBaseUrl;
+    const entryFileRef = useRef(entryFile);
+    entryFileRef.current = entryFile;
+
+    // ── WebSocket connection (connect ONCE, auto-reconnect) ─────────────
     useEffect(() => {
         if (!repoId) return;
-        const wsUrl = `${wsBaseUrl}?repoId=${repoId}&language=${language}`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        let destroyed = false;
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-        ws.onopen = () => {
-            setConnected(true);
-            // Fire any run command that was queued before connection was ready
-            if (pendingRunRef.current) {
-                const msgToSend = pendingRunRef.current;
-                pendingRunRef.current = null;
-                setTimeout(() => {
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify(msgToSend));
-                        busyRef.current = true;
-                    }
-                }, 500); // small delay for backend setup to finish
-            }
-        };
+        function connect() {
+            if (destroyed) return;
+            const wsUrl = `${wsBaseUrlRef.current}?repoId=${repoId}&language=${languageRef.current}`;
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
 
-        ws.onmessage = (e) => {
-            const term = termRef.current;
-            if (!term) return;
-            try {
-                const msg = JSON.parse(e.data);
+            ws.onopen = () => {
+                if (destroyed) { ws.close(); return; }
+                setConnected(true);
+                // Fire any run command that was queued before connection was ready
+                if (pendingRunRef.current) {
+                    const msgToSend = pendingRunRef.current;
+                    pendingRunRef.current = null;
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify(msgToSend));
+                            busyRef.current = true;
+                        }
+                    }, 500);
+                }
+            };
 
-                if (msg.type === "output") {
-                    // Stream command output directly
-                    term.write(msg.data);
-                } else if (msg.type === "prompt") {
-                    // Command finished — show prompt
-                    cwdRef.current = msg.cwd || "/workspace";
-                    busyRef.current = false;
-                    showPrompt(term, cwdRef.current);
-                    term.focus();
-                } else if (msg.type === "status") {
-                    const color = msg.color === "green" ? "\x1b[32m"
-                        : msg.color === "red" ? "\x1b[31m"
-                            : "\x1b[33m";
-                    term.writeln(`${color}[${msg.text}]\x1b[0m`);
-                    if (msg.color === "green") {
-                        // Container is ready — show prompt
+            ws.onmessage = (e) => {
+                const term = termRef.current;
+                if (!term) return;
+                try {
+                    const msg = JSON.parse(e.data);
+
+                    if (msg.type === "output") {
+                        term.write(msg.data);
+                    } else if (msg.type === "prompt") {
+                        cwdRef.current = msg.cwd || "/workspace";
+                        busyRef.current = false;
                         showPrompt(term, cwdRef.current);
                         term.focus();
+                    } else if (msg.type === "status") {
+                        const color = msg.color === "green" ? "\x1b[32m"
+                            : msg.color === "red" ? "\x1b[31m"
+                                : "\x1b[33m";
+                        term.writeln(`${color}[${msg.text}]\x1b[0m`);
+                        if (msg.color === "green") {
+                            showPrompt(term, cwdRef.current);
+                            term.focus();
+                        }
+                    } else if (msg.type === "error") {
+                        term.writeln(`\x1b[31m✗ ${msg.message}\x1b[0m`);
                     }
-                } else if (msg.type === "error") {
-                    term.writeln(`\x1b[31m✗ ${msg.message}\x1b[0m`);
+                } catch {
+                    termRef.current?.write(e.data);
                 }
-            } catch {
-                termRef.current?.write(e.data);
-            }
-        };
+            };
 
-        ws.onclose = () => {
-            setConnected(false);
-            wsRef.current = null;
-        };
+            ws.onclose = () => {
+                setConnected(false);
+                if (wsRef.current === ws) wsRef.current = null;
+                // Auto-reconnect after 2s unless destroyed
+                if (!destroyed) {
+                    reconnectTimer = setTimeout(connect, 2000);
+                }
+            };
 
-        ws.onerror = () => {
-            termRef.current?.writeln("\x1b[31m✗ Terminal connection failed\x1b[0m");
-        };
+            ws.onerror = () => {
+                termRef.current?.writeln("\x1b[31m✗ Terminal connection failed\x1b[0m");
+            };
+        }
 
-        return () => { ws.close(); wsRef.current = null; };
-    }, [repoId, wsBaseUrl, language]);
+        connect();
+
+        return () => {
+            destroyed = true;
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repoId]);
 
     // ── Run trigger ──────────────────────────────────────────────────────
     useEffect(() => {
         if (runTrigger <= lastTriggerRef.current) return;
         lastTriggerRef.current = runTrigger;
 
-        const entry = entryFile || (language === "java" ? "Main.java" : "main.py");
-        const runMsg = { type: "run", language, entry };
+        const lang = languageRef.current;
+        const entry = entryFileRef.current || (lang === "java" ? "Main.java" : "main.py");
+        const runMsg = { type: "run", language: lang, entry };
 
-        const ws = wsRef.current;
-        if (ws?.readyState === WebSocket.OPEN) {
-            busyRef.current = true;
-            ws.send(JSON.stringify(runMsg));
-        } else {
-            // Queue for when WS opens (happens when terminal panel opens fresh)
-            pendingRunRef.current = runMsg;
-            termRef.current?.writeln("\x1b[33m⟳ Connecting to terminal...\x1b[0m");
+        // Try to send immediately, or retry up to 3s waiting for WS
+        function trySend(retriesLeft: number) {
+            const ws = wsRef.current;
+            if (ws?.readyState === WebSocket.OPEN) {
+                busyRef.current = true;
+                ws.send(JSON.stringify(runMsg));
+                return;
+            }
+            if (retriesLeft > 0) {
+                setTimeout(() => trySend(retriesLeft - 1), 300);
+            } else {
+                // Last resort: queue for next WS open
+                pendingRunRef.current = runMsg;
+                termRef.current?.writeln("\x1b[33m⟳ Connecting to terminal...\x1b[0m");
+            }
         }
-    }, [runTrigger, language, entryFile]);
+
+        trySend(10); // retry up to 10 × 300ms = 3 seconds
+    }, [runTrigger]);
 
     const handleClear = () => { termRef.current?.clear(); showPrompt(termRef.current!, cwdRef.current); };
     const handleKill = () => {

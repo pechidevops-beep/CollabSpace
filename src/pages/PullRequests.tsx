@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     GitPullRequest, GitMerge, GitBranch, ArrowLeft, Plus, X,
-    MessageSquare, Check, Clock, AlertCircle, Send,
+    MessageSquare, Check, Clock, AlertCircle, Send, FolderGit2, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -358,37 +358,136 @@ function PRDetailView({
 
 // ─── Main page ───────────────────────────────────────────────────────
 const PullRequests = () => {
-    const repoId = useMemo(() => localStorage.getItem("activeRepoId") || "", []);
-    const repoName = useMemo(() => localStorage.getItem("activeRepoName") || "Repository", []);
+    const workspaceId = localStorage.getItem("activeWorkspaceId") || "";
+    const [selectedRepoId, setSelectedRepoId] = useState<string>("");
+    const [selectedRepoName, setSelectedRepoName] = useState<string>("");
     const [selectedPR, setSelectedPR] = useState<PR | null>(null);
+    const [showRepoPicker, setShowRepoPicker] = useState(false);
 
-    if (!repoId) {
+    // Fetch all repos in the active workspace
+    const { data: repos = [] } = useQuery({
+        queryKey: ["repositories", workspaceId],
+        queryFn: () => apiFetch<Repo[]>(`/repositories?workspaceId=${workspaceId}`),
+        enabled: Boolean(workspaceId),
+    });
+
+    // Default to localStorage activeRepoId once repos load
+    useEffect(() => {
+        if (repos.length > 0 && !selectedRepoId) {
+            const stored = localStorage.getItem("activeRepoId") || "";
+            const storedName = localStorage.getItem("activeRepoName") || "";
+            // Prefer stored if it exists in the workspace repos list
+            const match = repos.find((r) => r.id === stored);
+            if (match) {
+                setSelectedRepoId(match.id);
+                setSelectedRepoName(match.name);
+            } else if (repos[0]) {
+                // Fall back to first repo
+                setSelectedRepoId(repos[0].id);
+                setSelectedRepoName(repos[0].name);
+            }
+        }
+    }, [repos, selectedRepoId]);
+
+    const handleSelectRepo = (repo: Repo) => {
+        setSelectedRepoId(repo.id);
+        setSelectedRepoName(repo.name);
+        localStorage.setItem("activeRepoId", repo.id);
+        localStorage.setItem("activeRepoName", repo.name);
+        setSelectedPR(null);
+        setShowRepoPicker(false);
+    };
+
+    // No workspace set at all
+    if (!workspaceId) {
         return (
             <div className="max-w-5xl mx-auto py-12 text-center">
                 <GitPullRequest className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h2 className="text-lg font-medium text-foreground">No Repository Selected</h2>
-                <p className="text-sm text-muted-foreground mt-1">Open a repository first from the Repositories page.</p>
+                <h2 className="text-lg font-medium text-foreground">No Workspace Selected</h2>
+                <p className="text-sm text-muted-foreground mt-1">Open a workspace from the Workspaces page first.</p>
             </div>
         );
     }
 
-    if (selectedPR) {
+    if (selectedPR && selectedRepoId) {
         return (
             <PRDetailView
                 prId={selectedPR.id}
-                repoName={repoName}
+                repoName={selectedRepoName}
                 onBack={() => setSelectedPR(null)}
             />
         );
     }
 
+    // Repo picker dropdown overlay
+    const RepoPicker = () => (
+        <AnimatePresence>
+            {showRepoPicker && (
+                <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="absolute top-full left-0 mt-1 z-50 w-64 rounded-xl border border-border bg-card shadow-xl overflow-hidden"
+                >
+                    {repos.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-muted-foreground">No repositories found.</div>
+                    ) : (
+                        repos.map((repo) => (
+                            <button
+                                key={repo.id}
+                                onClick={() => handleSelectRepo(repo)}
+                                className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-secondary/50 transition-colors text-left ${
+                                    repo.id === selectedRepoId ? "bg-primary/10 text-primary font-medium" : "text-foreground"
+                                }`}
+                            >
+                                <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
+                                {repo.name}
+                                {repo.id === selectedRepoId && <Check className="h-3 w-3 ml-auto" />}
+                            </button>
+                        ))
+                    )}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+
+    if (!selectedRepoId) {
+        return (
+            <div className="max-w-5xl mx-auto py-12 text-center">
+                <GitPullRequest className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h2 className="text-lg font-medium text-foreground">Loading repositories...</h2>
+                <p className="text-sm text-muted-foreground mt-1">Please wait while we load your repos.</p>
+            </div>
+        );
+    }
+
     return (
-        <PRList
-            repoId={repoId}
-            repoName={repoName}
-            onSelect={(pr) => setSelectedPR(pr)}
-            onBack={() => { }}
-        />
+        <div className="relative">
+            {/* Repo switcher bar */}
+            <div className="max-w-5xl mx-auto mb-4">
+                <div className="relative inline-block">
+                    <button
+                        onClick={() => setShowRepoPicker(!showRepoPicker)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-secondary/50 transition-colors text-sm"
+                    >
+                        <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="font-mono font-medium text-foreground">{selectedRepoName}</span>
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                    <RepoPicker />
+                </div>
+                {showRepoPicker && (
+                    <div className="fixed inset-0 z-40" onClick={() => setShowRepoPicker(false)} />
+                )}
+            </div>
+
+            <PRList
+                repoId={selectedRepoId}
+                repoName={selectedRepoName}
+                onSelect={(pr) => setSelectedPR(pr)}
+                onBack={() => {}}
+            />
+        </div>
     );
 };
 

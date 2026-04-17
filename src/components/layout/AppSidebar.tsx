@@ -10,7 +10,7 @@ import {
   GitPullRequest,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -38,9 +38,8 @@ const toolItems = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
+  const { state, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
   const navigate = useNavigate();
   const [userEmail, setUserEmail] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
@@ -65,6 +64,11 @@ export function AppSidebar() {
     navigate("/login");
   };
 
+  // Close sidebar on mobile after nav
+  const handleNavClick = () => {
+    if (isMobile) setOpenMobile(false);
+  };
+
   const renderItems = (items: typeof mainItems) =>
     items.map((item) => (
       <SidebarMenuItem key={item.title}>
@@ -74,6 +78,7 @@ export function AppSidebar() {
             end
             className="hover:bg-sidebar-accent/50 transition-colors"
             activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+            onClick={handleNavClick}
           >
             <item.icon className="mr-2 h-4 w-4" />
             {!collapsed && <span>{item.title}</span>}

@@ -1,8 +1,0 @@
-{
-  "owner": "insert or update on table \"workspace_members\" violates foreign key constraint \"workspace_members_workspace_id_fkey\"",
-  "member": "insert or update on table \"workspace_members\" violates foreign key constraint \"workspace_members_workspace_id_fkey\"",
-  "viewer": "new row for relation \"workspace_members\" violates check constraint \"workspace_members_role_check\"",
-  "guest": "new row for relation \"workspace_members\" violates check constraint \"workspace_members_role_check\"",
-  "admin": "new row for relation \"workspace_members\" violates check constraint \"workspace_members_role_check\"",
-  "editor": "new row for relation \"workspace_members\" violates check constraint \"workspace_members_role_check\""
-}

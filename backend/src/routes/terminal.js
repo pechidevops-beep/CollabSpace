@@ -72,13 +72,10 @@ function isInteractiveRuntime(cmd) {
 const BLOCKED = [/rm\s+(-[a-zA-Z]*)?-?r.*\//i, /\bshutdown\b/i, /\breboot\b/i, /\bmkfs\b/i, /\bdd\s+if=/i];
 function isBlocked(cmd) { return BLOCKED.some(p => p.test(cmd)); }
 
-// ─── Build run command ───────────────────────────────────────────────
+// ─── Build run command (Docker / Linux) ─────────────────────────────
 function buildRunCmd(entry) {
     const ext = path.extname(entry).toLowerCase();
     if (ext === ".py") {
-        // PYTHONSAFEPATH=1 prevents cwd from being added to sys.path
-        // This fixes the issue where a file named e.g. random.py shadows
-        // Python's stdlib random module
         return `PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1 python3 -u "${entry}"`;
     }
     if (ext === ".java") {
@@ -87,6 +84,42 @@ function buildRunCmd(entry) {
     }
     if (ext === ".js") return `node "${entry}"`;
     return `cat "${entry}"`;
+}
+
+// ─── Build run command (Local / Windows) ─────────────────────────────
+function buildRunCmdLocal(entry) {
+    const ext = path.extname(entry).toLowerCase();
+    if (ext === ".py") {
+        return `python -u "${entry}"`;
+    }
+    if (ext === ".java") {
+        const cls = path.basename(entry, ".java");
+        if (process.platform === "win32") {
+            return `javac "${entry}" && java ${cls}`;
+        }
+        return `javac "${entry}" && java ${cls}`;
+    }
+    if (ext === ".js") return `node "${entry}"`;
+    if (process.platform === "win32") return `type "${entry}"`;
+    return `cat "${entry}"`;
+}
+
+// ─── Sync files locally (no Docker) ──────────────────────────────────
+async function syncFilesLocal(repoId) {
+    const sb = supabaseAdmin();
+    const { data: files } = await sb.from("repo_files").select("path,content").eq("repo_id", repoId);
+    if (!files || files.length === 0) return tmpdir();
+
+    const workDir = path.join(tmpdir(), `cs-local-${repoId.slice(0, 12)}`);
+    await mkdir(workDir, { recursive: true });
+
+    for (const f of files) {
+        if (f.path.endsWith("/")) continue;
+        const abs = path.join(workDir, f.path);
+        await mkdir(path.dirname(abs), { recursive: true });
+        await writeFile(abs, f.content ?? "", "utf8");
+    }
+    return workDir;
 }
 
 // ─── Run command (interactive): keeps stdin open for input() calls ───
@@ -137,10 +170,11 @@ export function attachTerminalWS(server) {
 
         const send = (obj) => { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); };
 
-        let cwd = "/workspace";
+        let cwd = dockerAvailable ? "/workspace" : tmpdir();
         let activeProc = null;   // currently running process (if any)
         let containerReady = false;
         let containerN = null;
+        let localWorkDir = null; // for no-Docker local execution
 
         // ── Initial setup ──
         async function setup() {
@@ -172,22 +206,40 @@ export function attachTerminalWS(server) {
 
             // `cd` — track server-side cwd
             if (cmd.startsWith("cd ") || cmd === "cd") {
-                const target = cmd === "cd" ? "/workspace" : cmd.slice(3).trim();
-                const newCwd = target.startsWith("/") ? target : `${cwd}/${target}`;
-                const verify = spawn("docker", [
-                    "exec", "-w", cwd, containerN, "bash", "-c", `cd "${newCwd}" && pwd`,
-                ], { stdio: ["ignore", "pipe", "pipe"] });
-                let out = "";
-                verify.stdout.on("data", d => out += d.toString());
-                verify.on("close", (code) => {
-                    if (code === 0 && out.trim()) {
-                        cwd = out.trim();
-                    } else {
-                        send({ type: "output", data: `\x1b[31mbash: cd: ${target}: No such file or directory\x1b[0m\r\n` });
+                if (containerN) {
+                    // Docker mode: verify via docker exec
+                    const target = cmd === "cd" ? "/workspace" : cmd.slice(3).trim();
+                    const newCwd = target.startsWith("/") ? target : `${cwd}/${target}`;
+                    const verify = spawn("docker", [
+                        "exec", "-w", cwd, containerN, "bash", "-c", `cd "${newCwd}" && pwd`,
+                    ], { stdio: ["ignore", "pipe", "pipe"] });
+                    let out = "";
+                    verify.stdout.on("data", d => out += d.toString());
+                    verify.on("close", (code) => {
+                        if (code === 0 && out.trim()) {
+                            cwd = out.trim();
+                        } else {
+                            send({ type: "output", data: `\x1b[31mbash: cd: ${target}: No such file or directory\x1b[0m\r\n` });
+                        }
+                        send({ type: "prompt", cwd });
+                    });
+                    verify.on("error", () => { send({ type: "prompt", cwd }); });
+                } else {
+                    // Local mode: resolve path locally
+                    const target = cmd === "cd" ? (localWorkDir || tmpdir()) : cmd.slice(3).trim();
+                    const newCwd = path.isAbsolute(target) ? target : path.resolve(cwd, target);
+                    try {
+                        const { statSync } = await import("node:fs");
+                        if (statSync(newCwd).isDirectory()) {
+                            cwd = newCwd;
+                        } else {
+                            send({ type: "output", data: `\x1b[31mcd: not a directory: ${target}\x1b[0m\r\n` });
+                        }
+                    } catch {
+                        send({ type: "output", data: `\x1b[31mcd: ${target}: No such file or directory\x1b[0m\r\n` });
                     }
                     send({ type: "prompt", cwd });
-                });
-                verify.on("error", () => { send({ type: "prompt", cwd }); });
+                }
                 return;
             }
 
@@ -204,11 +256,13 @@ export function attachTerminalWS(server) {
             } else if (containerN) {
                 activeProc = spawnSimple(containerN, cmd, cwd);
             } else {
-                // Local fallback (no Docker)
+                // Local fallback (no Docker) — use pipe stdin for interactive support
+                const localCwd = localWorkDir || cwd;
+                const useStdin = needsStdin ? "pipe" : "ignore";
                 activeProc = spawn(
                     process.platform === "win32" ? "cmd.exe" : "bash",
                     process.platform === "win32" ? ["/c", cmd] : ["-c", cmd],
-                    { cwd: tmpdir(), stdio: ["ignore", "pipe", "pipe"] }
+                    { cwd: localCwd, stdio: [useStdin, "pipe", "pipe"] }
                 );
             }
 
@@ -253,10 +307,22 @@ export function attachTerminalWS(server) {
                 if (containerN) {
                     send({ type: "output", data: `\x1b[36m▶ Syncing and running ${entry}...\x1b[0m\r\n` });
                     await syncFiles(containerN, repoId).catch(() => { });
+                    const cmd = buildRunCmd(entry);
+                    send({ type: "output", data: `\x1b[36m$ ${cmd}\x1b[0m\r\n` });
+                    await execCommand(cmd);
+                } else {
+                    // Local mode — sync files to temp directory then run
+                    send({ type: "output", data: `\x1b[36m▶ Syncing and running ${entry}...\x1b[0m\r\n` });
+                    try {
+                        localWorkDir = await syncFilesLocal(repoId);
+                        cwd = localWorkDir;
+                    } catch (err) {
+                        send({ type: "output", data: `\x1b[31mSync error: ${err.message}\x1b[0m\r\n` });
+                    }
+                    const cmd = buildRunCmdLocal(entry);
+                    send({ type: "output", data: `\x1b[36m$ ${cmd}\x1b[0m\r\n` });
+                    await execCommand(cmd);
                 }
-                const cmd = buildRunCmd(entry);
-                send({ type: "output", data: `\x1b[36m$ ${cmd}\x1b[0m\r\n` });
-                await execCommand(cmd);
                 return;
             }
 
