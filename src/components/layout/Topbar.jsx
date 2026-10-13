@@ -1,10 +1,14 @@
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Bell, Search } from 'lucide-react';
+import { ChevronRight, Settings, LogOut, Code2, LayoutDashboard, FolderGit2 } from 'lucide-react';
+import NotificationBell from '../shared/NotificationBell';
+import ThemeToggle from '../ui/ThemeToggle';
+import { CommandPaletteTrigger } from '../ui/CommandPalette';
+import { DropdownMenu, DropdownItem, DropdownSeparator } from '../ui/DropdownMenu';
 
-export default function Topbar() {
-  const { user, signOut } = useAuth();
+export default function Topbar({ onOpenCmd }) {
+  const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -12,60 +16,128 @@ export default function Topbar() {
     try {
       await signOut();
       navigate('/');
-    } catch (error) {
-      console.error('Sign-out failed', error);
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const getBreadcrumb = () => {
-    const path = location.pathname;
-    if (path.includes('/dashboard')) return 'Dashboard';
-    if (path.includes('/workspaces')) return 'Workspaces';
-    if (path.includes('/assessments')) return 'Assessments';
-    if (path.includes('/settings')) return 'Settings';
-    return 'Home';
-  };
+  const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const initials = displayName
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  // Parse path segments for clean Apple-style breadcrumbs
+  const pathParts = location.pathname
+    .split('/')
+    .filter(Boolean)
+    .filter((p) => p !== 'app');
+
+  const breadcrumbs = pathParts.map((part, index) => {
+    const url = `/app/${pathParts.slice(0, index + 1).join('/')}`;
+    const label = part.charAt(0).toUpperCase() + part.slice(1);
+    return { label, url, isLast: index === pathParts.length - 1 };
+  });
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 border-b border-slate-800/50 bg-slate-950/20 backdrop-blur-sm z-40 sticky top-0">
-      {/* Left: Breadcrumbs / Page Title */}
-      <div className="flex items-center gap-4">
-        <h2 className="text-sm font-semibold text-slate-200 tracking-wide">
-          {getBreadcrumb()}
-        </h2>
-      </div>
+    <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-dim bg-surface/80 backdrop-blur-md sticky top-0 z-20 select-none">
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs">
+        <Link
+          to="/app/dashboard"
+          className="text-text-dim hover:text-text-main font-medium transition-colors"
+        >
+          App
+        </Link>
+        {breadcrumbs.map((crumb) => (
+          <React.Fragment key={crumb.url}>
+            <ChevronRight size={13} className="text-text-dim shrink-0" />
+            {crumb.isLast ? (
+              <span className="font-semibold text-text-main truncate max-w-[140px] md:max-w-[200px]">
+                {crumb.label}
+              </span>
+            ) : (
+              <Link
+                to={crumb.url}
+                className="text-text-sub hover:text-text-main transition-colors truncate max-w-[100px]"
+              >
+                {crumb.label}
+              </Link>
+            )}
+          </React.Fragment>
+        ))}
+      </nav>
 
-      {/* Right: Actions */}
-      <div className="flex items-center gap-4">
-        {/* Search Bar - Visual Only for now */}
-        <div className="hidden md:flex items-center gap-2 bg-slate-900/50 border border-slate-800 rounded-full px-3 py-1.5 w-64 focus-within:ring-1 focus-within:ring-brand-500/50 transition-all">
-          <Search size={14} className="text-slate-500" />
-          <input
-            type="text"
-            placeholder="Search..."
-            className="bg-transparent border-none outline-none text-xs text-slate-300 placeholder:text-slate-600 w-full"
-          />
-          <div className="flex items-center gap-0.5 text-[10px] text-slate-600 font-mono border border-slate-800 rounded px-1">
-            <span>⌘</span><span>K</span>
+      {/* Right Controls */}
+      <div className="flex items-center gap-2 md:gap-3">
+        <CommandPaletteTrigger onClick={onOpenCmd} className="hidden sm:inline-flex w-44 lg:w-56" />
+
+        <ThemeToggle size="sm" />
+
+        <NotificationBell />
+
+        <DropdownMenu
+          align="right"
+          className="w-56"
+          trigger={
+            <button
+              type="button"
+              className="h-8 w-8 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-semibold border border-accent/20 hover:scale-105 active:scale-95 transition-transform"
+              aria-label="User profile menu"
+            >
+              {initials}
+            </button>
+          }
+        >
+          <div className="px-3 py-2 border-b border-border-dim">
+            <div className="text-xs font-semibold text-text-main truncate">{displayName}</div>
+            <div className="text-[11px] text-text-dim truncate">{user?.email}</div>
           </div>
-        </div>
-
-        <button className="relative p-2 text-slate-400 hover:text-white transition-colors">
-          <Bell size={18} />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border border-slate-950"></span>
-        </button>
-
-        <div className="h-6 w-px bg-slate-800 mx-1"></div>
-
-        {user && (
-          <button
-            onClick={handleSignOut}
-            className="text-xs font-medium text-slate-400 hover:text-brand-300 transition-colors"
-          >
+          <DropdownItem icon={Settings} onClick={() => navigate('/app/settings')}>
+            Account Settings
+          </DropdownItem>
+          <DropdownSeparator />
+          <DropdownItem icon={LogOut} danger onClick={handleSignOut}>
             Sign Out
-          </button>
-        )}
+          </DropdownItem>
+        </DropdownMenu>
       </div>
     </header>
+  );
+}
+
+export function MobileNavBar() {
+  const location = useLocation();
+
+  const links = [
+    { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/app/workspaces', icon: FolderGit2, label: 'Workspaces' },
+    { to: '/app/settings', icon: Settings, label: 'Settings' },
+  ];
+
+  return (
+    <nav
+      aria-label="Mobile Navigation"
+      className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-surface/95 backdrop-blur-xl border-t border-border-dim z-40 flex items-center justify-around px-4 select-none"
+    >
+      {links.map((link) => {
+        const Icon = link.icon;
+        const isActive = location.pathname === link.to || (link.to !== '/app/dashboard' && location.pathname.startsWith(link.to));
+
+        return (
+          <Link
+            key={link.to}
+            to={link.to}
+            className={`flex flex-col items-center gap-1 py-1 px-3 text-[10px] font-medium transition-colors
+              ${isActive ? 'text-accent' : 'text-text-sub hover:text-text-main'}`}
+          >
+            <Icon size={18} />
+            <span>{link.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

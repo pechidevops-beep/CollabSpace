@@ -21,8 +21,8 @@ function RequireAuth({ children }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-200">
-        <span className="text-sm text-slate-400">Loading session...</span>
+      <div className="flex min-h-screen items-center justify-center bg-canvas text-text-sub">
+        <span className="text-xs text-text-dim">Loading session...</span>
       </div>
     );
   }

@@ -225,6 +225,17 @@ export function useCommandPalette() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        // Prevent opening when focus is inside Monaco Editor
+        const isMonaco =
+          e.target &&
+          (e.target.closest?.('.monaco-editor') ||
+            e.target.closest?.('.monaco-mouse-cursor-text') ||
+            e.target.classList?.contains('inputarea'));
+
+        if (isMonaco) {
+          return;
+        }
+
         e.preventDefault();
         setIsOpen((prev) => !prev);
       }
@@ -239,6 +250,27 @@ export function useCommandPalette() {
     close: () => setIsOpen(false),
     toggle: () => setIsOpen((prev) => !prev),
   };
+}
+
+export function CommandPaletteTrigger({ onClick, className = '' }) {
+  const isMac = typeof window !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center justify-between h-9 px-3 rounded-[10px] bg-subtle border border-border-dim text-text-sub hover:text-text-main hover:border-border-strong text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${className}`}
+      aria-label="Open command palette"
+    >
+      <span className="flex items-center gap-2">
+        <Search size={14} className="text-text-dim" />
+        <span>Search or command...</span>
+      </span>
+      <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-text-dim bg-surface border border-border-dim rounded">
+        {isMac ? '⌘K' : 'Ctrl+K'}
+      </kbd>
+    </button>
+  );
 }
 
 export default CommandPalette;

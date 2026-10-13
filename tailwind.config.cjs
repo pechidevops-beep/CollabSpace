@@ -5,6 +5,33 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Core design tokens with RGB channel opacity support
+        canvas: 'rgb(var(--color-canvas) / <alpha-value>)',
+        surface: 'rgb(var(--color-surface) / <alpha-value>)',
+        elevated: 'rgb(var(--color-elevated) / <alpha-value>)',
+        subtle: 'rgb(var(--color-subtle) / <alpha-value>)',
+
+        accent: {
+          DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
+          fg: 'rgb(var(--color-accent-fg) / <alpha-value>)',
+          hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
+          ring: 'rgb(var(--color-ring) / <alpha-value>)',
+        },
+
+        'text-main': 'rgb(var(--color-text) / <alpha-value>)',
+        'text-sub': 'rgb(var(--color-text-sub) / <alpha-value>)',
+        'text-dim': 'rgb(var(--color-text-dim) / <alpha-value>)',
+
+        'border-dim': 'rgba(var(--color-border), var(--border-opacity, 0.08))',
+        'border-strong': 'rgba(var(--color-border), 0.16)',
+
+        semantic: {
+          success: 'rgb(var(--color-success) / <alpha-value>)',
+          danger: 'rgb(var(--color-danger) / <alpha-value>)',
+          warning: 'rgb(var(--color-warning) / <alpha-value>)',
+          info: 'rgb(var(--color-info) / <alpha-value>)',
+        },
+
         // Legacy HSL mappings for unmigrated components
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
@@ -20,10 +47,6 @@ module.exports = {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
         },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
@@ -32,26 +55,7 @@ module.exports = {
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
 
-        // Brand palette
-        brand: {
-          DEFAULT: 'var(--accent-hex, #5b5bd6)',
-          hover: 'var(--accent-hover, #6d6de6)',
-          muted: 'var(--accent-muted, rgba(91, 91, 214, 0.16))',
-          fg: 'var(--accent-foreground-hex, #ffffff)',
-          50: '#f0f4ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          800: '#3730a3',
-          900: '#312e81',
-          950: '#090a0f',
-        },
-
-        // Slate palette
+        // Legacy Slate for compatibility
         slate: {
           50: '#f8fafc',
           100: '#f1f5f9',
@@ -63,42 +67,40 @@ module.exports = {
           700: '#334155',
           800: '#1e293b',
           900: '#0f172a',
-          950: '#020617',
+          950: '#0b0b0c',
         },
-
-        // New design tokens
-        canvas: 'var(--bg-canvas)',
-        surface: 'var(--bg-surface)',
-        subtle: 'var(--bg-subtle)',
-        elevated: 'var(--bg-elevated)',
-        'text-main': 'var(--text-primary)',
-        'text-sub': 'var(--text-secondary)',
-        'text-dim': 'var(--text-muted)',
-        'border-dim': 'var(--border-subtle)',
-        'border-strong': 'var(--border-strong)',
-        semantic: {
-          success: 'var(--success)',
-          'success-bg': 'var(--success-muted)',
-          warning: 'var(--warning)',
-          'warning-bg': 'var(--warning-muted)',
-          danger: 'var(--danger)',
-          'danger-bg': 'var(--danger-muted)',
+        brand: {
+          DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
+          50: '#f0f4ff',
+          100: '#e0e7ff',
+          200: '#c7d2fe',
+          300: '#a5b4fc',
+          400: '#818cf8',
+          500: 'rgb(var(--color-accent) / <alpha-value>)',
+          600: 'rgb(var(--color-accent) / <alpha-value>)',
+          700: '#0071e3',
+          800: '#005bb5',
+          900: '#004488',
+          950: '#0b0b0c',
         },
       },
       borderRadius: {
-        DEFAULT: 'var(--radius)',
-        sm: 'var(--radius-sm, 6px)',
-        md: 'var(--radius-md, 10px)',
-        lg: 'var(--radius-lg, 16px)',
-        full: 'var(--radius-full, 9999px)',
+        control: 'var(--radius-control, 10px)',
+        panel: 'var(--radius-panel, 14px)',
+        DEFAULT: '10px',
+        sm: '6px',
+        md: '10px',
+        lg: '14px',
+        xl: '18px',
+        full: '9999px',
       },
       boxShadow: {
-        glass: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-        'glass-sm': '0 4px 16px 0 rgba(31, 38, 135, 0.20)',
-        neon: '0 0 10px rgba(99, 102, 241, 0.5), 0 0 20px rgba(99, 102, 241, 0.3)',
-        subtle: 'var(--shadow-subtle)',
-        card: 'var(--shadow-card)',
-        elevated: 'var(--shadow-elevated)',
+        glass: '0 8px 32px 0 rgba(0, 0, 0, 0.25)',
+        'glass-sm': '0 4px 16px 0 rgba(0, 0, 0, 0.15)',
+        neon: '0 0 10px rgba(var(--color-accent), 0.4)',
+        subtle: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+        card: '0 4px 16px -2px rgba(0, 0, 0, 0.08)',
+        elevated: '0 16px 36px -4px rgba(0, 0, 0, 0.16)',
       },
       fontFamily: {
         sans: [
@@ -121,8 +123,8 @@ module.exports = {
       },
       animation: {
         blob: 'blob 7s infinite',
-        'fade-in': 'fadeIn 0.5s ease-out forwards',
-        'slide-up': 'slideUp 0.5s ease-out forwards',
+        'fade-in': 'fadeIn 0.18s ease-out forwards',
+        'slide-up': 'slideUp 0.18s ease-out forwards',
       },
       keyframes: {
         blob: {
@@ -136,7 +138,7 @@ module.exports = {
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { transform: 'translateY(20px)', opacity: '0' },
+          '0%': { transform: 'translateY(16px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
       },

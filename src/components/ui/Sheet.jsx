@@ -13,22 +13,56 @@ export function Sheet({
   width = 'max-w-lg',
   className = '',
 }) {
-  const overlayRef = useRef(null);
+  const panelRef = useRef(null);
+  const previouslyFocusedElementRef = useRef(null);
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
     if (isOpen) {
+      previouslyFocusedElementRef.current = document.activeElement;
       document.body.style.overflow = 'hidden';
+
+      const focusable = panelRef.current?.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable && focusable.length > 0) {
+        focusable[0]?.focus();
+      }
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          onClose();
+          return;
+        }
+
+        if (e.key === 'Tab' && panelRef.current) {
+          const elements = panelRef.current.querySelectorAll(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          );
+          if (elements.length === 0) return;
+
+          const first = elements[0];
+          const last = elements[elements.length - 1];
+
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      };
+
       window.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+        if (previouslyFocusedElementRef.current && previouslyFocusedElementRef.current.focus) {
+          previouslyFocusedElementRef.current.focus();
+        }
+      };
     }
-    return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
   }, [isOpen, onClose]);
 
   if (typeof document === 'undefined') return null;
@@ -63,11 +97,10 @@ export function Sheet({
         <div className="fixed inset-0 z-50 flex">
           {/* Backdrop */}
           <motion.div
-            ref={overlayRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.18 }}
             onClick={onClose}
             className="fixed inset-0 bg-black/60 backdrop-blur-sm"
             aria-hidden="true"
@@ -75,11 +108,12 @@ export function Sheet({
 
           {/* Slide-over Panel */}
           <motion.div
+            ref={panelRef}
             variants={motionVariants[side] || motionVariants.right}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 30 }}
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? 'sheet-title' : undefined}
@@ -102,7 +136,7 @@ export function Sheet({
               <button
                 type="button"
                 onClick={onClose}
-                className="text-text-dim hover:text-text-main p-1.5 rounded-md hover:bg-subtle transition-colors"
+                className="text-text-dim hover:text-text-main p-1.5 rounded-[8px] hover:bg-subtle transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label="Close panel"
               >
                 <X size={16} />

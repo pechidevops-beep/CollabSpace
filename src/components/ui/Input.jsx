@@ -11,6 +11,7 @@ export const Input = forwardRef(function Input(
     type = 'text',
     required = false,
     icon: Icon,
+    rightElement,
     ...props
   },
   ref
@@ -53,10 +54,16 @@ export const Input = forwardRef(function Input(
             focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20
             disabled:opacity-50 disabled:cursor-not-allowed
             ${Icon ? 'pl-9' : ''}
+            ${rightElement ? 'pr-9' : ''}
             ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-dim'}
             ${inputClassName}`}
           {...props}
         />
+        {rightElement && (
+          <div className="absolute right-2 flex items-center">
+            {rightElement}
+          </div>
+        )}
       </div>
 
       {error ? (

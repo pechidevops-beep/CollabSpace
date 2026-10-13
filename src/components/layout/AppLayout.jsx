@@ -1,25 +1,37 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
-import Sidebar from '../layout/Sidebar';
+import { Outlet, useLocation } from 'react-router-dom';
+import Sidebar from './Sidebar';
+import Topbar, { MobileNavBar } from './Topbar';
+import { CommandPalette, useCommandPalette } from '../ui/CommandPalette';
 
 export default function AppLayout() {
+  const location = useLocation();
+  const cmdPalette = useCommandPalette();
+
+  const isEditorRoute = location.pathname.includes('/editor/');
+
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative">
-        <div className="mx-auto max-w-7xl px-6 py-8 md:px-10 md:py-10 min-h-full">
-          {/* Background grid effect */}
-          <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
-            style={{
-              backgroundImage: `linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)`,
-              backgroundSize: '40px 40px'
-            }}
-          />
-          <div className="relative z-10">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas text-text-main">
+      {/* Sidebar Icon Rail (Hidden on Editor route) */}
+      {!isEditorRoute && <Sidebar onOpenCmd={cmdPalette.open} />}
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        {/* Topbar (Hidden on Editor route to grant 100% IDE real estate) */}
+        {!isEditorRoute && <Topbar onOpenCmd={cmdPalette.open} />}
+
+        {/* Scrollable Main Viewport */}
+        <main className={`flex-1 overflow-y-auto custom-scrollbar relative ${isEditorRoute ? 'p-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
+          <div className={`${isEditorRoute ? 'h-full w-full' : 'mx-auto max-w-6xl min-h-full'}`}>
             <Outlet />
           </div>
-        </div>
-      </main>
+        </main>
+
+        {/* Mobile Navigation Bar */}
+        {!isEditorRoute && <MobileNavBar />}
+      </div>
+
+      {/* Global Command Palette */}
+      <CommandPalette isOpen={cmdPalette.isOpen} onClose={cmdPalette.close} />
     </div>
   );
 }
