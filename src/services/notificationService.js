@@ -4,32 +4,47 @@ import { supabase } from '../lib/supabaseClient';
  * Get notifications for the current user.
  */
 export async function getNotifications({ limit = 20, unreadOnly = false } = {}) {
-    let query = supabase
-        .from('notifications')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+    try {
+        let query = supabase
+            .from('notifications')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limit);
 
-    if (unreadOnly) {
-        query = query.eq('read', false);
+        if (unreadOnly) {
+            query = query.eq('read', false);
+        }
+
+        const { data, error } = await query;
+        if (error) {
+            console.warn('[notifications] getNotifications error:', error.message);
+            return [];
+        }
+        return data ?? [];
+    } catch {
+        return [];
     }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data ?? [];
 }
 
 /**
  * Get unread notification count.
  */
 export async function getUnreadCount() {
-    const { count, error } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('read', false);
-    if (error) throw error;
-    return count ?? 0;
+    try {
+        const { count, error } = await supabase
+            .from('notifications')
+            .select('id', { count: 'exact', head: true })
+            .eq('read', false);
+        if (error) {
+            console.warn('[notifications] getUnreadCount error:', error.message);
+            return 0;
+        }
+        return count ?? 0;
+    } catch {
+        return 0;
+    }
 }
+
 
 /**
  * Mark a single notification as read.

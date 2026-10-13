@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import FileTree from '../../editor/components/FileTree';
 import PageTransition from '../../../components/shared/PageTransition';
+import ReactMarkdown from 'react-markdown';
 import {
     createRepositoryFile,
     createRepositoryFolder,
@@ -14,8 +15,16 @@ import {
 import { getCommitHistory } from '../../../services/editorService';
 import { buildFileTree } from '../../../utils/repository';
 import {
-    GitCommit, Code, Globe, Lock, Calendar, FileCode,
+    GitCommit, Code, Globe, Lock, Calendar, FileCode, Star, GitFork,
 } from 'lucide-react';
+
+const formatBytes = (value = 0) => {
+    if (!value || value <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const idx = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+    const sized = value / 1024 ** idx;
+    return `${sized.toFixed(sized >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+};
 
 export default function RepositoryPage() {
     const { repoId, workspaceId } = useParams();
@@ -63,6 +72,15 @@ export default function RepositoryPage() {
     useEffect(() => {
         setTree(buildFileTree(files));
     }, [files]);
+
+    const readmeFile = useMemo(() => {
+        const candidates = files.filter(f => f?.type === 'file' && typeof f?.name === 'string');
+        const rootReadme = candidates.find(f => f.parent_id === null && f.name.toLowerCase() === 'readme.md');
+        if (rootReadme) return rootReadme;
+        return candidates.find(f => f.name.toLowerCase() === 'readme.md') || null;
+    }, [files]);
+
+    const readmeContent = (readmeFile?.content || '').trim();
 
     const handleCreateFile = (parentId) => {
         setFileFormParentId(parentId);
@@ -184,9 +202,20 @@ export default function RepositoryPage() {
                                     {repository.language}
                                 </div>
                             )}
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                <Star size={12} className="text-yellow-400" />
+                                {repository.stars_count ?? 0}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                <GitFork size={12} className="text-slate-300" />
+                                {repository.forks_count ?? 0}
+                            </div>
                             <div className="text-[11px] text-slate-500 flex items-center gap-1">
                                 <Calendar size={12} />
                                 {new Date(repository.created_at).toLocaleDateString()}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                                Size: {formatBytes(repository.size_bytes ?? 0)}
                             </div>
                         </div>
                     </div>
@@ -237,6 +266,18 @@ export default function RepositoryPage() {
                                 onDelete={handleDelete}
                             />
                         </div>
+
+                        {readmeContent && (
+                            <div className="glass-panel p-4 rounded-xl mt-4">
+                                <h3 className="text-sm font-semibold text-slate-200 mb-3">README</h3>
+                                <div className="markdown text-sm text-slate-200">
+                                    <ReactMarkdown>{readmeContent}</ReactMarkdown>
+                                </div>
+                                <p className="mt-3 text-[11px] text-slate-500">
+                                    Last updated: {readmeFile?.last_modified_at ? new Date(readmeFile.last_modified_at).toLocaleString() : 'Unknown'}
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     <div className="space-y-4">

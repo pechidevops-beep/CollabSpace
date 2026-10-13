@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { logActivity } from './activityService';
+import { createBranch } from './branchService';
 
 export async function getRepositories(workspaceId) {
   const { data, error } = await supabase
@@ -55,6 +56,18 @@ export async function createRepository({
     .select('*')
     .maybeSingle();
   if (error) throw error;
+
+  try {
+    await createBranch({
+      repositoryId: data?.id,
+      name: defaultBranch,
+      createdBy,
+    });
+  } catch (branchError) {
+    // Avoid failing repo creation if branch insert fails (e.g., RLS or existing branch)
+    // Consumers can still create the branch manually.
+    console.warn('Branch creation skipped:', branchError?.message || branchError);
+  }
 
   await logActivity({
     type: 'repo_created',

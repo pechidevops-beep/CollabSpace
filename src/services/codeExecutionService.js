@@ -1,11 +1,69 @@
 /**
- * Code Execution Service using Judge0 CE (Community Edition)
- * https://judge0.com/
+ * Code Execution Service
  *
- * Uses the free public Judge0 CE instance.
- * Supports 60+ languages including Java, Python, JavaScript, C++, etc.
+ * - Java & Python (multi-file, packages, imports):
+ *     → Docker-based local execution server at http://localhost:4000/api/run
+ * - All other languages (JS, C++, etc):
+ *     → Judge0 CE free public instance
  */
 
+// ─── Docker Execution Server ───────────────────────────────────────────────
+const EXECUTION_SERVER_URL = 'http://localhost:4000/api/run';
+
+/**
+ * Languages that should use the Docker execution engine (multi-file support)
+ */
+const PROJECT_LANGUAGES = new Set(['java', 'python', 'py']);
+
+/**
+ * Check if a file/language uses the Docker multi-file executor.
+ */
+export function isProjectLanguage(fileNameOrLang) {
+    if (!fileNameOrLang) return false;
+    const lower = fileNameOrLang.toLowerCase();
+    if (PROJECT_LANGUAGES.has(lower)) return true;
+    const ext = lower.split('.').pop();
+    return PROJECT_LANGUAGES.has(ext);
+}
+
+/**
+ * Execute a full multi-file project using the Docker execution server.
+ *
+ * @param {Object} params
+ * @param {string} params.language - "java" or "python"
+ * @param {Array<{path: string, content: string}>} params.files - All project files with paths
+ * @returns {Promise<{stdout, stderr, exitCode, executionTime, language, version}>}
+ */
+export async function executeProject({ language, files, stdin }) {
+    const lang = language.toLowerCase().replace(/^py$/, 'python');
+
+    let res;
+    try {
+        res = await fetch(EXECUTION_SERVER_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: lang, files, stdin: stdin || undefined }),
+        });
+    } catch (err) {
+        throw new Error(
+            `Cannot connect to execution server at ${EXECUTION_SERVER_URL}.\n\nMake sure the execution server is running:\n  cd execution-server && node src/index.js`
+        );
+    }
+
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Execution server error (${res.status}): ${text}`);
+    }
+
+    const result = await res.json();
+    return {
+        ...result,
+        language: lang.charAt(0).toUpperCase() + lang.slice(1),
+        version: lang === 'java' ? 'OpenJDK 17' : 'Python 3.11',
+    };
+}
+
+// ─── Judge0 CE (single-file, all other languages) ──────────────────────────
 const JUDGE0_API = 'https://judge0-ce.p.rapidapi.com';
 const JUDGE0_HOST = 'judge0-ce.p.rapidapi.com';
 const JUDGE0_KEY = 'free'; // Free tier markers

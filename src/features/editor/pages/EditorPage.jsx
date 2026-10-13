@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import FileTree from '../components/FileTree';
 import CodeEditor from '../components/CodeEditor';
 import JSZip from 'jszip';
-import { executeCode, isLanguageSupported } from '../../../services/codeExecutionService';
+import { executeCode, isLanguageSupported, executeProject, isProjectLanguage } from '../../../services/codeExecutionService';
 import {
     createRepositoryFile,
     createRepositoryFolder,
@@ -79,6 +79,7 @@ export default function EditorPage() {
     const [showOutput, setShowOutput] = useState(false);
     const outputRef = useRef(null);
     const [downloadingRepo, setDownloadingRepo] = useState(false);
+    const [stdinValue, setStdinValue] = useState('');
 
     const buildSnapshotFiles = useCallback(() => (
         files.map((file) => {
@@ -446,19 +447,53 @@ export default function EditorPage() {
                             const file = files.find(f => f.id === activeTabId);
                             if (!file) return;
                             const lang = file.name || currentLanguage;
-                            if (!isLanguageSupported(lang)) {
-                                setExecutionOutput({ stdout: '', stderr: `Language not supported for execution: ${lang}`, exitCode: 1, language: lang, version: '' });
-                                setShowOutput(true);
-                                return;
-                            }
                             setRunning(true);
                             setShowOutput(true);
                             setExecutionOutput(null);
                             try {
-                                const result = await executeCode({ code: currentContent, language: lang });
+                                let result;
+                                if (isProjectLanguage(lang)) {
+                                    // ── Docker multi-file execution (Java / Python) ──
+                                    const projectFiles = files
+                                        .filter(f => f.type === 'file')
+                                        .map(f => ({
+                                            path: pathMap.get(f.id) || f.name,
+                                            content: tabContents[f.id] ?? f.content ?? '',
+                                        }));
+                                    const detectedLang = lang.toLowerCase().endsWith('.java') ? 'java'
+                                        : lang.toLowerCase().endsWith('.py') ? 'python'
+                                            : currentLanguage;
+                                    const langFiles = projectFiles.filter(f =>
+                                        detectedLang === 'java' ? f.path.endsWith('.java') : f.path.endsWith('.py')
+                                    );
+                                    setExecutionOutput({
+                                        command: detectedLang === 'java'
+                                            ? `javac ${langFiles.map(f => f.path).join(' ')} && java <MainClass>`
+                                            : `python3 ${langFiles.find(f => f.path.includes('main.py'))?.path || langFiles[0]?.path || 'main.py'}`,
+                                        fileCount: langFiles.length,
+                                        language: detectedLang === 'java' ? 'Java' : 'Python',
+                                        version: detectedLang === 'java' ? 'OpenJDK 17' : 'Python 3.11',
+                                        phase: 'compiling',
+                                    });
+                                    result = await executeProject({ language: detectedLang, files: projectFiles, stdin: stdinValue || undefined });
+                                    result.command = result.exitCode === 0
+                                        ? (detectedLang === 'java'
+                                            ? `javac (${langFiles.length} files) && java → exit 0`
+                                            : `python3 → exit 0`)
+                                        : (detectedLang === 'java'
+                                            ? `javac/java → exit ${result.exitCode}`
+                                            : `python3 → exit ${result.exitCode}`);
+                                    result.fileCount = langFiles.length;
+                                } else if (isLanguageSupported(lang)) {
+                                    // ── Judge0 single-file execution ──
+                                    result = await executeCode({ code: currentContent, language: lang });
+                                    result.command = `run ${file.name}`;
+                                } else {
+                                    result = { stdout: '', stderr: `Language not supported: ${lang}`, exitCode: 1, language: lang, version: '' };
+                                }
                                 setExecutionOutput(result);
                             } catch (err) {
-                                setExecutionOutput({ stdout: '', stderr: err.message, exitCode: 1, language: lang, version: '' });
+                                setExecutionOutput({ stdout: '', stderr: err.message, exitCode: 1, language: lang, version: '', command: 'execution failed' });
                             }
                             setRunning(false);
                             setTimeout(() => { if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }, 100);
@@ -585,8 +620,8 @@ export default function EditorPage() {
                                 <div className="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 border-b border-slate-800 shrink-0">
                                     <div className="flex items-center gap-2 text-[11px]">
                                         <Terminal size={13} className="text-emerald-400" />
-                                        <span className="font-medium text-slate-300">Output</span>
-                                        {executionOutput && (
+                                        <span className="font-medium text-slate-300">Terminal</span>
+                                        {executionOutput && !executionOutput.phase && (
                                             <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${executionOutput.exitCode === 0
                                                 ? 'bg-emerald-500/10 text-emerald-400'
                                                 : 'bg-rose-500/10 text-rose-400'
@@ -595,8 +630,19 @@ export default function EditorPage() {
                                             </span>
                                         )}
                                         {executionOutput?.language && (
-                                            <span className="text-[9px] text-slate-500">
+                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                                                {executionOutput.language === 'Java' ? '☕' : executionOutput.language === 'Python' ? '🐍' : '▶'}{' '}
                                                 {executionOutput.language} {executionOutput.version}
+                                            </span>
+                                        )}
+                                        {executionOutput?.fileCount > 1 && (
+                                            <span className="text-[9px] text-slate-500">
+                                                {executionOutput.fileCount} files
+                                            </span>
+                                        )}
+                                        {executionOutput?.executionTime != null && (
+                                            <span className="text-[9px] text-slate-600">
+                                                ⏱ {executionOutput.executionTime}ms
                                             </span>
                                         )}
                                     </div>
@@ -619,28 +665,67 @@ export default function EditorPage() {
                                 </div>
                                 <div
                                     ref={outputRef}
-                                    className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-slate-950/80"
+                                    className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-[#0d1117]"
                                 >
-                                    {running ? (
+                                    {running && executionOutput?.phase === 'compiling' ? (
+                                        <div className="space-y-2">
+                                            <div className="text-slate-500 text-[10px]">
+                                                $ {executionOutput.command}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-slate-400">
+                                                <Loader2 size={14} className="animate-spin text-amber-400" />
+                                                <span>{executionOutput.language === 'Java' ? 'Compiling' : 'Running'} {executionOutput.fileCount} file{executionOutput.fileCount !== 1 ? 's' : ''}…</span>
+                                            </div>
+                                        </div>
+                                    ) : running ? (
                                         <div className="flex items-center gap-2 text-slate-400">
                                             <Loader2 size={14} className="animate-spin text-brand-400" />
-                                            <span>Executing code…</span>
+                                            <span>Executing…</span>
                                         </div>
-                                    ) : executionOutput ? (
-                                        <div className="space-y-2">
+                                    ) : executionOutput && !executionOutput.phase ? (
+                                        <div className="space-y-1">
+                                            {/* Command line */}
+                                            {executionOutput.command && (
+                                                <div className="text-slate-500 text-[10px] pb-1 border-b border-slate-800/50 mb-2">
+                                                    <span className="text-emerald-500">$</span> {executionOutput.command}
+                                                </div>
+                                            )}
+                                            {/* Stdout */}
                                             {executionOutput.stdout && (
                                                 <pre className="text-emerald-300 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stdout}</pre>
                                             )}
+                                            {/* Stderr / compile errors */}
                                             {executionOutput.stderr && (
                                                 <pre className="text-rose-400 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stderr}</pre>
                                             )}
                                             {!executionOutput.stdout && !executionOutput.stderr && (
-                                                <span className="text-slate-500 italic">No output</span>
+                                                <span className="text-slate-500 italic">Program exited with no output</span>
                                             )}
+                                            {/* Return prompt */}
+                                            <div className="text-slate-600 text-[10px] pt-2 mt-2 border-t border-slate-800/50">
+                                                <span className="text-emerald-600">$</span> _
+                                            </div>
                                         </div>
                                     ) : (
-                                        <span className="text-slate-500 italic">Click Run to execute the current file</span>
+                                        <div className="space-y-1">
+                                            <span className="text-slate-600">Welcome to CollabSpace Terminal</span>
+                                            <div className="text-slate-500 text-[10px]">Click ▶ Run to execute the current project</div>
+                                            <div className="text-slate-600 text-[10px] mt-2">
+                                                <span className="text-emerald-600">$</span> _
+                                            </div>
+                                        </div>
                                     )}
+                                </div>
+                                {/* STDIN input area */}
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border-t border-slate-800 shrink-0">
+                                    <span className="text-[10px] text-slate-500 shrink-0">stdin:</span>
+                                    <input
+                                        type="text"
+                                        value={stdinValue}
+                                        onChange={e => setStdinValue(e.target.value)}
+                                        placeholder="Enter program input (optional)"
+                                        className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300 font-mono outline-none focus:border-emerald-600 placeholder:text-slate-700"
+                                    />
                                 </div>
                             </div>
                         )}
