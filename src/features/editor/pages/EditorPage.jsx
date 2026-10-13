@@ -665,7 +665,7 @@ export default function EditorPage() {
                                 </div>
                                 <div
                                     ref={outputRef}
-                                    className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-[#0d1117]"
+                                    className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-canvas"
                                 >
                                     {running && executionOutput?.phase === 'compiling' ? (
                                         <div className="space-y-2">
