@@ -5,6 +5,7 @@ import DashboardHero from '../components/DashboardHero';
 import DashboardStats from '../components/DashboardStats';
 import WorkspaceCard from '../components/WorkspaceCard';
 import Skeleton from '../../../components/ui/Skeleton';
+import Button from '../../../components/ui/Button';
 import { gsap } from 'gsap';
 import { Plus, Command } from 'lucide-react';
 import ActivityFeed from '../../activity/components/ActivityFeed';
@@ -263,26 +264,28 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-white">Your Workspaces</h2>
               <div className="flex gap-3">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
+                  icon={Command}
                   onClick={() => {
                     setJoinOpen(true);
                     setCreateOpen(false);
                   }}
-                  className="btn btn-secondary text-xs"
                 >
-                  <Command size={14} />
                   Join Code
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={Plus}
                   onClick={() => {
                     setCreateOpen(true);
                     setJoinOpen(false);
                   }}
-                  className="btn btn-primary text-xs"
                 >
-                  <Plus size={16} />
                   New Workspace
-                </button>
+                </Button>
               </div>
             </div>
 
