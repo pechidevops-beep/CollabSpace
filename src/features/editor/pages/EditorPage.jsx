@@ -377,7 +377,7 @@ export default function EditorPage() {
 
     if (loading) {
         return (
-            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-slate-500">
+            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-text-dim">
                 <div className="flex flex-col items-center gap-3">
                     <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
                     Loading editor…
@@ -388,7 +388,7 @@ export default function EditorPage() {
 
     if (!repository) {
         return (
-            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-slate-500">
+            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-text-dim">
                 Repository not found.
             </div>
         );
@@ -402,23 +402,23 @@ export default function EditorPage() {
     return (
         <div className="flex h-[calc(100vh-80px)] flex-col gap-0">
             {/* Top toolbar */}
-            <div className="flex items-center justify-between bg-slate-900/80 border-b border-slate-800 px-3 py-1.5 text-xs text-slate-400 shrink-0">
+            <div className="flex items-center justify-between bg-surface border-b border-border-dim px-3 py-1.5 text-xs text-text-sub shrink-0">
                 <div className="flex items-center gap-2">
                     <Link
                         to={`/app/workspace/${workspaceId}`}
-                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 hover:border-slate-500 hover:text-slate-100 transition"
+                        className="rounded-md border border-border-dim bg-subtle px-2 py-1 text-[11px] text-text-main hover:border-border-strong hover:text-text-main transition"
                     >
                         ← Back
                     </Link>
                     <div className="flex flex-col">
-                        <span className="text-sm font-medium text-slate-200">{repository.name}</span>
+                        <span className="text-sm font-medium text-text-main">{repository.name}</span>
                         {repository.visibility && (
                             <span className={`text-[10px] ${repository.visibility === 'private' ? 'text-amber-400' : 'text-emerald-400'}`}>
                                 {repository.visibility}
                             </span>
                         )}
                         {activePath && (
-                            <span className="text-[10px] text-slate-500">{activePath}</span>
+                            <span className="text-[10px] text-text-dim">{activePath}</span>
                         )}
                     </div>
                 </div>
@@ -440,7 +440,7 @@ export default function EditorPage() {
                     <button onClick={handleSave} disabled={!activeTabId || saving || !canEditFiles} className="btn-editor-primary" title={canEditFiles ? 'Save' : 'No permission to save'}>
                         {!canEditFiles ? <Lock size={13} /> : <Save size={13} />} {saving ? 'Saving…' : 'Save'}
                     </button>
-                    <div className="w-px h-4 bg-slate-700" />
+                    <div className="w-px h-4 bg-subtle" />
                     <button
                         onClick={async () => {
                             if (!activeTabId || running) return;
@@ -510,7 +510,7 @@ export default function EditorPage() {
 
             {/* Commit dialog */}
             {commitDialogOpen && (
-                <div className="bg-slate-900/95 border-b border-slate-800 px-4 py-3 shrink-0 animate-fade-in">
+                <div className="bg-surface border-b border-border-dim px-4 py-3 shrink-0 animate-fade-in">
                     <form onSubmit={handleCommit} className="flex items-center gap-3">
                         <GitCommit size={16} className="text-brand-400 shrink-0" />
                         <input
@@ -518,7 +518,7 @@ export default function EditorPage() {
                             value={commitMessage}
                             onChange={e => setCommitMessage(e.target.value)}
                             placeholder="Commit message (e.g. 'Add login component')"
-                            className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-brand-500"
+                            className="flex-1 bg-canvas border border-border-dim rounded px-3 py-1.5 text-xs text-text-main outline-none focus:border-brand-500"
                         />
                         <button type="submit" disabled={committing || !commitMessage.trim()} className="btn-editor-primary">
                             {committing ? 'Committing…' : 'Commit All'}
@@ -532,15 +532,15 @@ export default function EditorPage() {
 
             {/* Create file/folder form */}
             {fileFormOpen && (
-                <div className="bg-slate-900/95 border-b border-slate-800 px-4 py-3 shrink-0 animate-fade-in">
+                <div className="bg-surface border-b border-border-dim px-4 py-3 shrink-0 animate-fade-in">
                     <form onSubmit={handleCreateSubmit} className="flex items-center gap-3">
-                        <span className="text-[11px] text-slate-400">New {fileFormType}:</span>
+                        <span className="text-[11px] text-text-sub">New {fileFormType}:</span>
                         <input
                             autoFocus
                             value={newItemName}
                             onChange={e => setNewItemName(e.target.value)}
                             placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.ext'}
-                            className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-brand-500 font-mono"
+                            className="flex-1 bg-canvas border border-border-dim rounded px-3 py-1.5 text-xs text-text-main outline-none focus:border-brand-500 font-mono"
                         />
                         <button type="submit" disabled={creating || !newItemName.trim()} className="btn-editor-primary">
                             {creating ? 'Creating…' : 'Create'}
@@ -556,7 +556,7 @@ export default function EditorPage() {
             {/* Main content */}
             <div className="flex flex-1 min-h-0">
                 {/* File tree */}
-                <div className="w-60 shrink-0 border-r border-slate-800">
+                <div className="w-60 shrink-0 border-r border-border-dim">
                     <FileTree
                         tree={tree}
                         currentFileId={activeTabId}
@@ -571,14 +571,14 @@ export default function EditorPage() {
                 {/* Editor area */}
                 <div className="flex flex-1 flex-col min-w-0">
                     {openTabs.length > 0 && (
-                        <div className="flex bg-slate-900/60 border-b border-slate-800 overflow-x-auto shrink-0 custom-scrollbar">
+                        <div className="flex bg-subtle border-b border-border-dim overflow-x-auto shrink-0 custom-scrollbar">
                             {openTabs.map(tab => (
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTabId(tab.id)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-r border-slate-800 shrink-0 transition-colors ${tab.id === activeTabId
-                                        ? 'bg-slate-950 text-white border-b-2 border-b-brand-500'
-                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-r border-border-dim shrink-0 transition-colors ${tab.id === activeTabId
+                                        ? 'bg-canvas text-text-main border-b-2 border-b-accent'
+                                        : 'text-text-sub hover:text-text-main hover:bg-subtle'
                                         }`}
                                 >
                                     {dirtyTabs.has(tab.id) && (
@@ -587,7 +587,7 @@ export default function EditorPage() {
                                     <span>{tab.name}</span>
                                     <span
                                         onClick={(e) => handleCloseTab(tab.id, e)}
-                                        className="ml-1 p-0.5 rounded hover:bg-slate-700 text-slate-500 hover:text-white"
+                                        className="ml-1 p-0.5 rounded hover:bg-subtle text-text-dim hover:text-text-main"
                                     >
                                         <X size={10} />
                                     </span>
@@ -605,10 +605,10 @@ export default function EditorPage() {
                                     onChange={handleContentChange}
                                 />
                             ) : (
-                                <div className="flex h-full items-center justify-center text-xs text-slate-500">
+                                <div className="flex h-full items-center justify-center text-xs text-text-dim">
                                     <div className="text-center space-y-2">
                                         <p>Select a file to begin editing</p>
-                                        <p className="text-[10px] text-slate-600">or create a new file with the + button</p>
+                                        <p className="text-[10px] text-text-dim">or create a new file with the + button</p>
                                     </div>
                                 </div>
                             )}
@@ -616,11 +616,11 @@ export default function EditorPage() {
 
                         {/* Output Terminal Panel */}
                         {showOutput && (
-                            <div className="border-t border-slate-700 flex flex-col" style={{ flex: '0 0 40%', minHeight: '120px', maxHeight: '50%' }}>
-                                <div className="flex items-center justify-between bg-slate-900/90 px-3 py-1.5 border-b border-slate-800 shrink-0">
+                            <div className="border-t border-border-dim flex flex-col" style={{ flex: '0 0 40%', minHeight: '120px', maxHeight: '50%' }}>
+                                <div className="flex items-center justify-between bg-surface px-3 py-1.5 border-b border-border-dim shrink-0">
                                     <div className="flex items-center gap-2 text-[11px]">
                                         <Terminal size={13} className="text-emerald-400" />
-                                        <span className="font-medium text-slate-300">Terminal</span>
+                                        <span className="font-medium text-text-main">Terminal</span>
                                         {executionOutput && !executionOutput.phase && (
                                             <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${executionOutput.exitCode === 0
                                                 ? 'bg-emerald-500/10 text-emerald-400'
@@ -630,18 +630,18 @@ export default function EditorPage() {
                                             </span>
                                         )}
                                         {executionOutput?.language && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-subtle text-text-sub">
                                                 {executionOutput.language === 'Java' ? '☕' : executionOutput.language === 'Python' ? '🐍' : '▶'}{' '}
                                                 {executionOutput.language} {executionOutput.version}
                                             </span>
                                         )}
                                         {executionOutput?.fileCount > 1 && (
-                                            <span className="text-[9px] text-slate-500">
+                                            <span className="text-[9px] text-text-dim">
                                                 {executionOutput.fileCount} files
                                             </span>
                                         )}
                                         {executionOutput?.executionTime != null && (
-                                            <span className="text-[9px] text-slate-600">
+                                            <span className="text-[9px] text-text-dim">
                                                 ⏱ {executionOutput.executionTime}ms
                                             </span>
                                         )}
@@ -649,14 +649,14 @@ export default function EditorPage() {
                                     <div className="flex items-center gap-1">
                                         <button
                                             onClick={() => setExecutionOutput(null)}
-                                            className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800 text-[10px]"
+                                            className="text-text-dim hover:text-text-main p-1 rounded hover:bg-subtle text-[10px]"
                                             title="Clear output"
                                         >
                                             Clear
                                         </button>
                                         <button
                                             onClick={() => setShowOutput(false)}
-                                            className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800"
+                                            className="text-text-dim hover:text-text-main p-1 rounded hover:bg-subtle"
                                             title="Close panel"
                                         >
                                             <X size={13} />
@@ -669,16 +669,16 @@ export default function EditorPage() {
                                 >
                                     {running && executionOutput?.phase === 'compiling' ? (
                                         <div className="space-y-2">
-                                            <div className="text-slate-500 text-[10px]">
+                                            <div className="text-text-dim text-[10px]">
                                                 $ {executionOutput.command}
                                             </div>
-                                            <div className="flex items-center gap-2 text-slate-400">
+                                            <div className="flex items-center gap-2 text-text-sub">
                                                 <Loader2 size={14} className="animate-spin text-amber-400" />
                                                 <span>{executionOutput.language === 'Java' ? 'Compiling' : 'Running'} {executionOutput.fileCount} file{executionOutput.fileCount !== 1 ? 's' : ''}…</span>
                                             </div>
                                         </div>
                                     ) : running ? (
-                                        <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="flex items-center gap-2 text-text-sub">
                                             <Loader2 size={14} className="animate-spin text-brand-400" />
                                             <span>Executing…</span>
                                         </div>
@@ -686,7 +686,7 @@ export default function EditorPage() {
                                         <div className="space-y-1">
                                             {/* Command line */}
                                             {executionOutput.command && (
-                                                <div className="text-slate-500 text-[10px] pb-1 border-b border-slate-800/50 mb-2">
+                                                <div className="text-text-dim text-[10px] pb-1 border-b border-border-dim mb-2">
                                                     <span className="text-emerald-500">$</span> {executionOutput.command}
                                                 </div>
                                             )}
@@ -699,32 +699,32 @@ export default function EditorPage() {
                                                 <pre className="text-rose-400 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stderr}</pre>
                                             )}
                                             {!executionOutput.stdout && !executionOutput.stderr && (
-                                                <span className="text-slate-500 italic">Program exited with no output</span>
+                                                <span className="text-text-dim italic">Program exited with no output</span>
                                             )}
                                             {/* Return prompt */}
-                                            <div className="text-slate-600 text-[10px] pt-2 mt-2 border-t border-slate-800/50">
+                                            <div className="text-text-dim text-[10px] pt-2 mt-2 border-t border-border-dim">
                                                 <span className="text-emerald-600">$</span> _
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="space-y-1">
-                                            <span className="text-slate-600">Welcome to CollabSpace Terminal</span>
-                                            <div className="text-slate-500 text-[10px]">Click ▶ Run to execute the current project</div>
-                                            <div className="text-slate-600 text-[10px] mt-2">
+                                            <span className="text-text-dim">Welcome to CollabSpace Terminal</span>
+                                            <div className="text-text-dim text-[10px]">Click ▶ Run to execute the current project</div>
+                                            <div className="text-text-dim text-[10px] mt-2">
                                                 <span className="text-emerald-600">$</span> _
                                             </div>
                                         </div>
                                     )}
                                 </div>
                                 {/* STDIN input area */}
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border-t border-slate-800 shrink-0">
-                                    <span className="text-[10px] text-slate-500 shrink-0">stdin:</span>
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-surface border-t border-border-dim shrink-0">
+                                    <span className="text-[10px] text-text-dim shrink-0">stdin:</span>
                                     <input
                                         type="text"
                                         value={stdinValue}
                                         onChange={e => setStdinValue(e.target.value)}
                                         placeholder="Enter program input (optional)"
-                                        className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300 font-mono outline-none focus:border-emerald-600 placeholder:text-slate-700"
+                                        className="flex-1 bg-canvas border border-border-dim rounded px-2 py-1 text-[11px] text-text-main font-mono outline-none focus:border-emerald-600 placeholder:text-text-dim"
                                     />
                                 </div>
                             </div>
@@ -734,30 +734,30 @@ export default function EditorPage() {
 
                 {/* Commit history sidebar */}
                 {commitsOpen && (
-                    <div className="w-80 shrink-0 border-l border-slate-800 bg-slate-950/80 flex flex-col">
-                        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800">
+                    <div className="w-80 shrink-0 border-l border-border-dim bg-surface flex flex-col">
+                        <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-dim">
                             <div className="flex items-center gap-2">
                                 <History size={14} className="text-brand-400" />
-                                <span className="text-[12px] font-semibold text-slate-200">Commit History</span>
+                                <span className="text-[12px] font-semibold text-text-main">Commit History</span>
                                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
                                     {commits.length}
                                 </span>
                             </div>
-                            <button onClick={() => setCommitsOpen(false)} className="text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-slate-800">
+                            <button onClick={() => setCommitsOpen(false)} className="text-text-dim hover:text-text-main p-1 rounded hover:bg-subtle">
                                 <X size={14} />
                             </button>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
                             {commits.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                                    <GitCommit size={28} className="text-slate-700 mb-3" />
-                                    <p className="text-[12px] text-slate-500">No commits yet</p>
-                                    <p className="text-[10px] text-slate-600 mt-1">Save your work to create the first commit</p>
+                                    <GitCommit size={28} className="text-text-dim mb-3" />
+                                    <p className="text-[12px] text-text-dim">No commits yet</p>
+                                    <p className="text-[10px] text-text-dim mt-1">Save your work to create the first commit</p>
                                 </div>
                             ) : (
                                 <div className="relative">
                                     {/* Timeline line */}
-                                    <div className="absolute left-[19px] top-0 bottom-0 w-px bg-slate-800" />
+                                    <div className="absolute left-[19px] top-0 bottom-0 w-px bg-subtle" />
 
                                     {commits.map((c, idx) => {
                                         const isExpanded = expandedCommitId === c.id;
@@ -772,15 +772,15 @@ export default function EditorPage() {
                                                     <div className={`w-[9px] h-[9px] rounded-full border-2 ${idx === 0
                                                         ? 'bg-brand-500 border-brand-400'
                                                         : isAutoSave
-                                                            ? 'bg-slate-700 border-slate-600'
-                                                            : 'bg-slate-800 border-slate-600'
+                                                            ? 'bg-subtle border-border-dim'
+                                                            : 'bg-subtle border-border-dim'
                                                         }`} />
                                                 </div>
 
                                                 <div
                                                     className={`ml-10 mr-2 my-1 p-2.5 rounded-lg border transition-all cursor-pointer ${isExpanded
-                                                        ? 'bg-slate-900/80 border-brand-500/30'
-                                                        : 'bg-slate-900/40 border-slate-800/50 hover:border-slate-700 hover:bg-slate-900/60'
+                                                        ? 'bg-surface border-brand-500/30'
+                                                        : 'bg-subtle border-border-dim hover:border-border-dim hover:bg-subtle'
                                                         }`}
                                                     onClick={async () => {
                                                         if (isExpanded) {
@@ -803,25 +803,25 @@ export default function EditorPage() {
                                                     <div className="flex items-start gap-2">
                                                         <ChevronRight
                                                             size={12}
-                                                            className={`text-slate-500 mt-0.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''
+                                                            className={`text-text-dim mt-0.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''
                                                                 }`}
                                                         />
                                                         <div className="flex-1 min-w-0">
-                                                            <p className={`text-[12px] leading-snug break-words ${isAutoSave ? 'text-slate-400 italic' : 'text-slate-200 font-medium'
+                                                            <p className={`text-[12px] leading-snug break-words ${isAutoSave ? 'text-text-sub italic' : 'text-text-main font-medium'
                                                                 }`}>
                                                                 {c.message}
                                                             </p>
                                                             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                                                 {c.author_name && (
-                                                                    <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                                                                    <span className="flex items-center gap-1 text-[10px] text-text-dim">
                                                                         <User size={9} /> {c.author_name}
                                                                     </span>
                                                                 )}
-                                                                <span className="text-[10px] text-slate-600">
+                                                                <span className="text-[10px] text-text-dim">
                                                                     {new Date(c.created_at).toLocaleDateString()} {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                 </span>
                                                                 {fileCount > 0 && (
-                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-subtle text-text-dim">
                                                                         {fileCount} file{fileCount !== 1 ? 's' : ''}
                                                                     </span>
                                                                 )}
@@ -831,23 +831,23 @@ export default function EditorPage() {
 
                                                     {/* Expanded: file list + restore */}
                                                     {isExpanded && (
-                                                        <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-2 animate-fade-in" onClick={e => e.stopPropagation()}>
+                                                        <div className="mt-3 pt-2.5 border-t border-border-dim space-y-2 animate-fade-in" onClick={e => e.stopPropagation()}>
                                                             {/* Files in this commit */}
                                                             {commitFilesLoading ? (
-                                                                <div className="flex items-center gap-2 text-[10px] text-slate-500 py-1">
+                                                                <div className="flex items-center gap-2 text-[10px] text-text-dim py-1">
                                                                     <Loader2 size={10} className="animate-spin" /> Loading files…
                                                                 </div>
                                                             ) : commitFilesList.length > 0 ? (
                                                                 <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
                                                                     {commitFilesList.map(cf => (
-                                                                        <div key={cf.id || cf.file_id} className="flex items-center gap-2 text-[10px] text-slate-400 py-0.5 px-1 rounded hover:bg-slate-800/50">
-                                                                            <FileCode size={10} className="text-slate-600 shrink-0" />
+                                                                        <div key={cf.id || cf.file_id} className="flex items-center gap-2 text-[10px] text-text-sub py-0.5 px-1 rounded hover:bg-subtle/50">
+                                                                            <FileCode size={10} className="text-text-dim shrink-0" />
                                                                             <span className="truncate">{cf.file_path || cf.file_name}</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
                                                             ) : (
-                                                                <p className="text-[10px] text-slate-600 italic">No file details available</p>
+                                                                <p className="text-[10px] text-text-dim italic">No file details available</p>
                                                             )}
 
                                                             {/* Restore button */}

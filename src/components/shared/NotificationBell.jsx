@@ -110,28 +110,28 @@ export default function NotificationBell() {
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setOpen(prev => !prev)}
-                className="relative p-2 rounded-lg hover:bg-slate-800 transition-colors text-slate-400 hover:text-slate-200"
+                className="relative p-2 rounded-lg hover:bg-subtle transition-colors text-text-sub hover:text-text-main"
                 title="Notifications"
             >
-                <Bell size={18} />
+                <Bell size={17} />
                 {unread > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 flex items-center justify-center text-[9px] font-bold text-white bg-rose-500 rounded-full min-w-[18px] px-1 shadow-lg shadow-rose-500/30">
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center text-[9px] font-bold text-white bg-semantic-danger rounded-full min-w-[16px] h-4 px-1 shadow-sm">
                         {unread > 99 ? '99+' : unread}
                     </span>
                 )}
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl shadow-black/50 z-50 overflow-hidden animate-fade-in">
+                <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border-dim rounded-[14px] shadow-2xl z-50 overflow-hidden animate-fade-in">
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-                        <h3 className="text-[12px] font-semibold text-slate-200">Notifications</h3>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border-dim">
+                        <h3 className="text-xs font-semibold text-text-main">Notifications</h3>
                         {unread > 0 && (
                             <button
                                 onClick={handleMarkAllRead}
-                                className="text-[10px] text-brand-400 hover:text-brand-300 flex items-center gap-1"
+                                className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium"
                             >
-                                <CheckCheck size={12} /> Mark all read
+                                <CheckCheck size={13} /> Mark all read
                             </button>
                         )}
                     </div>
@@ -139,22 +139,23 @@ export default function NotificationBell() {
                     {/* List */}
                     <div className="max-h-[360px] overflow-y-auto custom-scrollbar">
                         {loading ? (
-                            <div className="flex items-center justify-center py-8 text-xs text-slate-500">
-                                <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mr-2" />
+                            <div className="flex items-center justify-center py-8 text-xs text-text-dim">
+                                <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mr-2" />
                                 Loading…
                             </div>
                         ) : notifications.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-10 text-center">
-                                <Bell size={24} className="text-slate-700 mb-2" />
-                                <p className="text-[12px] text-slate-500">No notifications yet</p>
-                                <p className="text-[10px] text-slate-600 mt-0.5">You're all caught up!</p>
+                                <Bell size={22} className="text-text-dim/50 mb-2" />
+                                <p className="text-xs font-medium text-text-sub">No notifications yet</p>
+                                <p className="text-[11px] text-text-dim mt-0.5">You're all caught up!</p>
                             </div>
                         ) : (
                             notifications.map(n => (
                                 <div
                                     key={n.id}
-                                    className={`flex items-start gap-3 px-4 py-3 border-b border-slate-800/50 hover:bg-slate-900/50 transition-colors group ${!n.read ? 'bg-brand-500/5' : ''
-                                        }`}
+                                    className={`flex items-start gap-3 px-4 py-3 border-b border-border-dim last:border-b-0 hover:bg-subtle transition-colors group ${
+                                        !n.read ? 'bg-accent/5' : ''
+                                    }`}
                                 >
                                     {/* Icon */}
                                     <span className="text-base mt-0.5 shrink-0">
@@ -163,13 +164,13 @@ export default function NotificationBell() {
 
                                     {/* Content */}
                                     <div className="flex-1 min-w-0">
-                                        <p className={`text-[11px] leading-snug ${!n.read ? 'text-slate-200 font-medium' : 'text-slate-400'}`}>
+                                        <p className={`text-xs leading-snug ${!n.read ? 'text-text-main font-semibold' : 'text-text-sub'}`}>
                                             {n.title}
                                         </p>
                                         {n.message && (
-                                            <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                                            <p className="text-[11px] text-text-sub mt-0.5 line-clamp-2 leading-relaxed">{n.message}</p>
                                         )}
-                                        <p className="text-[9px] text-slate-600 mt-1">{formatTime(n.created_at)}</p>
+                                        <p className="text-[10px] text-text-dim mt-1">{formatTime(n.created_at)}</p>
                                     </div>
 
                                     {/* Actions */}
@@ -177,34 +178,34 @@ export default function NotificationBell() {
                                         {!n.read && (
                                             <button
                                                 onClick={() => handleMarkRead(n.id)}
-                                                className="p-1 rounded text-slate-600 hover:text-brand-400 hover:bg-brand-500/10"
+                                                className="p-1 rounded text-text-dim hover:text-accent hover:bg-surface"
                                                 title="Mark as read"
                                             >
-                                                <Check size={11} />
+                                                <Check size={12} />
                                             </button>
                                         )}
                                         {n.link && (
                                             <a
                                                 href={n.link}
                                                 onClick={() => { handleMarkRead(n.id); setOpen(false); }}
-                                                className="p-1 rounded text-slate-600 hover:text-brand-400 hover:bg-brand-500/10"
+                                                className="p-1 rounded text-text-dim hover:text-accent hover:bg-surface"
                                                 title="Go to"
                                             >
-                                                <ExternalLink size={11} />
+                                                <ExternalLink size={12} />
                                             </a>
                                         )}
                                         <button
                                             onClick={() => handleDelete(n.id)}
-                                            className="p-1 rounded text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"
+                                            className="p-1 rounded text-text-dim hover:text-semantic-danger hover:bg-semantic-danger/10"
                                             title="Delete"
                                         >
-                                            <Trash2 size={11} />
+                                            <Trash2 size={12} />
                                         </button>
                                     </div>
 
                                     {/* Unread dot */}
                                     {!n.read && (
-                                        <div className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0 mt-1.5" />
+                                        <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 mt-1.5" />
                                     )}
                                 </div>
                             ))

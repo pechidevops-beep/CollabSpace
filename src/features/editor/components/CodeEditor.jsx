@@ -1,11 +1,13 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect } from 'react';
 import * as monaco from 'monaco-editor';
+import { useTheme } from '../../../context/ThemeContext';
 
 export default function CodeEditor({ value, onChange, language }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const isUpdatingRef = useRef(false);
+  const { resolvedTheme } = useTheme();
 
   // Keep onChange ref always up to date
   useEffect(() => {
@@ -18,12 +20,12 @@ export default function CodeEditor({ value, onChange, language }) {
     editorRef.current = monaco.editor.create(containerRef.current, {
       value: value || '',
       language: language || 'plaintext',
-      theme: 'vs-dark',
+      theme: resolvedTheme === 'light' ? 'vs' : 'vs-dark',
       automaticLayout: true,
       minimap: { enabled: true },
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-      padding: { top: 16, bottom: 16 },
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
+      padding: { top: 12, bottom: 12 },
       scrollBeyondLastLine: false,
       smoothScrolling: true,
       cursorBlinking: 'smooth',
@@ -42,6 +44,13 @@ export default function CodeEditor({ value, onChange, language }) {
       editorRef.current?.dispose();
     };
   }, []);
+
+  // Sync theme changes with Monaco
+  useEffect(() => {
+    if (editorRef.current) {
+      monaco.editor.setTheme(resolvedTheme === 'light' ? 'vs' : 'vs-dark');
+    }
+  }, [resolvedTheme]);
 
   useEffect(() => {
     if (editorRef.current) {
