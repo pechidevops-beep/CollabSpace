@@ -1,23 +1,43 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useRef } from 'react';
 
 export const Card = forwardRef(function Card(
   {
     children,
     className = '',
     interactive = false,
+    spotlight = false,
     hoverLift = false,
     ...props
   },
-  ref
+  forwardedRef
 ) {
-  const liftClasses = hoverLift || interactive
-    ? 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-elevated hover:border-border-strong cursor-pointer'
+  const innerRef = useRef(null);
+  const ref = forwardedRef || innerRef;
+
+  const handleMouseMove = (e) => {
+    if (!spotlight && !interactive) return;
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+    const card = ref.current;
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    card.style.setProperty('--mx', `${x}px`);
+    card.style.setProperty('--my', `${y}px`);
+  };
+
+  const liftClasses = (hoverLift || interactive)
+    ? 'transition-all duration-150 hover:-translate-y-[1px] hover:border-border-strong cursor-pointer'
     : '';
+
+  const spotlightClasses = (spotlight || interactive) ? 'spotlight-card' : '';
 
   return (
     <div
       ref={ref}
-      className={`rounded-lg bg-surface border border-border-dim shadow-card overflow-hidden text-text-main ${liftClasses} ${className}`}
+      onMouseMove={handleMouseMove}
+      className={`card-signature text-text-main relative ${spotlightClasses} ${liftClasses} ${className}`}
       {...props}
     >
       {children}

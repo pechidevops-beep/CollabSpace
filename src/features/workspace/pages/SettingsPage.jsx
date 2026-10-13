@@ -4,12 +4,10 @@ import { useAuth } from '../../../context/AuthContext';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { ThemeToggle } from '../../../components/ui/ThemeToggle';
-import { useTheme } from '../../../context/ThemeContext';
-import { Check, User, Shield, Moon } from 'lucide-react';
+import { User, Shield, Moon } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user, profile, updateProfile } = useAuth();
-  const { accent, setAccent } = useTheme();
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
@@ -35,12 +33,6 @@ export default function SettingsPage() {
     }
     setSaving(false);
   };
-
-  const palettes = [
-    { id: 'theme-blue', name: 'Graphite + Blue', color: '#0A84FF' },
-    { id: 'theme-mint', name: 'Graphite + Mint', color: '#3DDC97' },
-    { id: 'theme-amber', name: 'Graphite + Amber', color: '#FF9F0A' },
-  ];
 
   return (
     <PageTransition>
@@ -92,36 +84,6 @@ export default function SettingsPage() {
               </div>
             </div>
             <ThemeToggle />
-          </div>
-
-          <div className="pt-3 border-t border-border-dim">
-            <h3 className="text-xs font-medium text-text-main mb-2">Accent Palette</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {palettes.map((p) => {
-                const isSelected = accent === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setAccent(p.id)}
-                    className={`flex items-center justify-between p-3 rounded-[10px] border transition-all text-left ${
-                      isSelected
-                        ? 'border-accent bg-subtle text-text-main font-medium shadow-sm'
-                        : 'border-border-dim bg-surface hover:bg-subtle text-text-sub hover:text-text-main'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className="w-3.5 h-3.5 rounded-full border border-black/20 shrink-0"
-                        style={{ backgroundColor: p.color }}
-                      />
-                      <span className="text-xs">{p.name}</span>
-                    </div>
-                    {isSelected && <Check size={14} className="text-accent" />}
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </section>
 

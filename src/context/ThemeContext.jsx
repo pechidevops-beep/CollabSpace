@@ -3,14 +3,11 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 const ThemeContext = createContext({
   theme: 'dark',
   resolvedTheme: 'dark',
-  accent: 'theme-blue',
   setTheme: () => {},
   toggleTheme: () => {},
-  setAccent: () => {},
 });
 
 const STORAGE_KEY_THEME = 'collabspace-theme';
-const STORAGE_KEY_ACCENT = 'collabspace-accent';
 
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
@@ -23,18 +20,6 @@ export function ThemeProvider({ children }) {
       // ignore
     }
     return 'dark';
-  });
-
-  const [accent, setAccentState] = useState(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_ACCENT);
-      if (stored === 'theme-blue' || stored === 'theme-mint' || stored === 'theme-amber') {
-        return stored;
-      }
-    } catch {
-      // ignore
-    }
-    return 'theme-blue';
   });
 
   const [resolvedTheme, setResolvedTheme] = useState('dark');
@@ -58,8 +43,8 @@ export function ThemeProvider({ children }) {
         root.classList.remove('dark');
       }
 
+      // Clean up any legacy accent classes
       root.classList.remove('theme-blue', 'theme-mint', 'theme-amber');
-      root.classList.add(accent);
     };
 
     applyTheme();
@@ -70,7 +55,7 @@ export function ThemeProvider({ children }) {
       mediaQuery.addEventListener('change', handleChange);
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
-  }, [theme, accent]);
+  }, [theme]);
 
   const setTheme = (newTheme) => {
     try {
@@ -81,22 +66,13 @@ export function ThemeProvider({ children }) {
     setThemeState(newTheme);
   };
 
-  const setAccent = (newAccent) => {
-    try {
-      localStorage.setItem(STORAGE_KEY_ACCENT, newAccent);
-    } catch {
-      // ignore
-    }
-    setAccentState(newAccent);
-  };
-
   const toggleTheme = () => {
     const next = resolvedTheme === 'dark' ? 'light' : 'dark';
     setTheme(next);
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, accent, setTheme, toggleTheme, setAccent }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -109,3 +85,5 @@ export function useTheme() {
   }
   return context;
 }
+
+export default ThemeContext;

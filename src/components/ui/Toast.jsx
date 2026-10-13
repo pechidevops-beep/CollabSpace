@@ -11,7 +11,7 @@ const icons = {
 const badgeStyles = {
   success: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
   danger: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
-  info: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20',
+  info: 'text-semantic-info bg-semantic-info/10 border-semantic-info/20',
 };
 
 export function ToastContainer({ toasts, onDismiss }) {
@@ -33,7 +33,7 @@ export function ToastContainer({ toasts, onDismiss }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
               transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-              className="pointer-events-auto flex items-start gap-3 p-4 rounded-xl border border-border-dim bg-surface text-text-main shadow-card backdrop-blur-md"
+              className="pointer-events-auto flex items-start gap-3 p-4 rounded-[14px] border border-border-dim bg-surface text-text-main shadow-card backdrop-blur-md"
               role="alert"
             >
               <div className={`p-1.5 rounded-lg border flex-shrink-0 ${style}`}>

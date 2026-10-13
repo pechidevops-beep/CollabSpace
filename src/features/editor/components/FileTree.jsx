@@ -15,7 +15,7 @@ function getFileIcon(name) {
         tsx: <FileCode size={14} className="text-blue-300" />,
         py: <FileCode size={14} className="text-emerald-400" />,
         html: <FileCode size={14} className="text-orange-400" />,
-        css: <FileCode size={14} className="text-purple-400" />,
+        css: <FileCode size={14} className="text-accent" />,
         scss: <FileCode size={14} className="text-pink-400" />,
         json: <FileJson size={14} className="text-yellow-300" />,
         md: <FileText size={14} className="text-text-sub" />,

@@ -11,7 +11,7 @@ export default function AppLayout() {
   const isEditorRoute = location.pathname.includes('/editor/');
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas text-text-main">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas text-text-main relative">
       {/* Sidebar Icon Rail (Hidden on Editor route) */}
       {!isEditorRoute && <Sidebar onOpenCmd={cmdPalette.open} />}
 
@@ -21,7 +21,10 @@ export default function AppLayout() {
 
         {/* Scrollable Main Viewport */}
         <main className={`flex-1 overflow-y-auto custom-scrollbar relative ${isEditorRoute ? 'p-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
-          <div className={`${isEditorRoute ? 'h-full w-full' : 'mx-auto max-w-6xl min-h-full'}`}>
+          {/* Subtle signature ambient glow (top center, 600px) */}
+          {!isEditorRoute && <div className="page-accent-glow" aria-hidden="true" />}
+
+          <div className={`${isEditorRoute ? 'h-full w-full' : 'relative z-10 mx-auto max-w-6xl min-h-full'}`}>
             <Outlet />
           </div>
         </main>

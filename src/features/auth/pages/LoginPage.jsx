@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import { AuthBrandPanel } from '../components/AuthBrandPanel';
 import { getFriendlyAuthErrorMessage } from '../utils/authErrors';
-import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
-import { ThemeToggle } from '../../../components/ui/ThemeToggle';
-import { Eye, EyeOff, AlertCircle, ArrowLeft } from 'lucide-react';
+import Button from '../../../components/ui/Button';
+import Input from '../../../components/ui/Input';
+import ThemeToggle from '../../../components/ui/ThemeToggle';
+import { Eye, EyeOff, AlertCircle, ArrowLeft, Code2 } from 'lucide-react';
 
 export default function LoginPage() {
   const { signInWithEmail, signInWithGoogle } = useAuth();
@@ -83,39 +82,42 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-canvas text-text-main selection:bg-brand/20">
-      {/* Left: Product Mockup & Brand Panel */}
-      <AuthBrandPanel />
+    <div className="min-h-screen flex flex-col justify-between bg-canvas text-text-main p-4 sm:p-6 relative overflow-hidden select-none">
+      {/* Soft Ambient Radial Glow */}
+      <div className="page-accent-glow" aria-hidden="true" />
 
-      {/* Right: Auth Form Panel */}
-      <div className="relative flex-1 flex flex-col justify-between p-6 sm:p-12 lg:p-16 overflow-y-auto">
-        {/* Top bar */}
-        <div className="flex items-center justify-between w-full max-w-md mx-auto">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 text-xs text-text-sub hover:text-text-main transition-colors"
-          >
-            <ArrowLeft size={14} />
-            <span>Back to home</span>
-          </Link>
-          <ThemeToggle />
-        </div>
+      {/* Top Controls */}
+      <div className="w-full flex items-center justify-between relative z-20">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-xs text-text-sub hover:text-text-main transition-colors px-2 py-1 rounded-[8px] hover:bg-subtle"
+        >
+          <ArrowLeft size={14} />
+          <span>Back to home</span>
+        </Link>
+        <ThemeToggle size="sm" />
+      </div>
 
-        {/* Center Form Container */}
-        <div className="w-full max-w-sm mx-auto my-auto py-8">
-          <div className="mb-8">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-main">
+      {/* Centered 400px Card */}
+      <div className="w-full max-w-[400px] mx-auto my-auto py-4 relative z-10 animate-fade-in">
+        <div className="card-signature p-6 sm:p-8">
+          {/* Logo & Heading */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="h-10 w-10 rounded-[10px] bg-accent text-on-accent flex items-center justify-center mb-3 shadow-sm">
+              <Code2 size={20} />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-text-main">
               Welcome back
             </h1>
-            <p className="text-xs sm:text-sm text-text-sub mt-1.5">
-              Enter your credentials to access your workspaces.
+            <p className="text-xs text-text-sub mt-1">
+              Sign in to collaborate on code and assessments.
             </p>
           </div>
 
           {/* General Error Banner */}
           {generalError && (
-            <div className="mb-6 p-3.5 rounded-lg bg-semantic-danger/10 border border-semantic-danger/20 flex items-start gap-2.5 text-xs text-semantic-danger animate-fadeIn">
-              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <div className="mb-4 p-3 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 flex items-start gap-2.5 text-xs text-semantic-danger animate-fade-in">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
               <span className="leading-relaxed">{generalError}</span>
             </div>
           )}
@@ -124,7 +126,7 @@ export default function LoginPage() {
           <Button
             type="button"
             variant="outline"
-            className="w-full h-10 mb-5 flex items-center justify-center gap-2.5 font-normal text-xs hover:bg-subtle"
+            className="w-full h-10 mb-4 font-normal text-xs"
             onClick={handleGoogleSignIn}
             disabled={isLoading || isGoogleLoading}
           >
@@ -150,17 +152,17 @@ export default function LoginPage() {
           </Button>
 
           {/* Divider */}
-          <div className="relative my-6 text-center">
+          <div className="relative my-4 text-center">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-border-dim" />
             </div>
-            <span className="relative px-3 bg-canvas text-[11px] text-text-dim uppercase tracking-wider">
+            <span className="relative px-2.5 bg-surface text-[10px] text-text-dim uppercase tracking-wider">
               or continue with email
             </span>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
             <Input
               id="email"
               label="Email address"
@@ -210,8 +212,9 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 variant="primary"
+                magnetic={true}
                 className="w-full h-10 font-medium text-xs shadow-sm"
-                isLoading={isLoading}
+                loading={isLoading}
                 disabled={isLoading}
               >
                 {isLoading ? 'Signing in...' : 'Sign in'}
@@ -219,22 +222,22 @@ export default function LoginPage() {
             </div>
           </form>
 
-          {/* Footer Link */}
-          <div className="mt-6 text-center text-xs text-text-sub">
+          {/* Switch Link */}
+          <div className="mt-5 pt-4 border-t border-border-dim text-center text-xs text-text-sub">
             Don't have an account?{' '}
             <Link
               to="/auth/signup"
-              className="text-text-main font-medium hover:underline transition-colors"
+              className="text-text-main font-medium hover:underline transition-colors ml-1"
             >
-              Create workspace
+              Sign up
             </Link>
           </div>
         </div>
+      </div>
 
-        {/* Bottom copyright/security note */}
-        <div className="w-full max-w-sm mx-auto text-center text-[11px] text-text-dim">
-          <span>By signing in, you agree to our Terms of Service and Privacy Policy.</span>
-        </div>
+      {/* Footer copyright */}
+      <div className="w-full text-center text-[11px] text-text-dim relative z-10 py-2">
+        <span>CollabSpace. Collaborative Workspace for Code and Education.</span>
       </div>
     </div>
   );

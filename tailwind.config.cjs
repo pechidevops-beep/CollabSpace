@@ -13,10 +13,11 @@ module.exports = {
 
         accent: {
           DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
-          fg: 'rgb(var(--color-accent-fg) / <alpha-value>)',
+          fg: 'rgb(var(--on-accent) / <alpha-value>)',
           hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
           ring: 'rgb(var(--color-ring) / <alpha-value>)',
         },
+        'on-accent': 'rgb(var(--on-accent) / <alpha-value>)',
 
         'text-main': 'rgb(var(--color-text) / <alpha-value>)',
         'text-sub': 'rgb(var(--color-text-sub) / <alpha-value>)',
@@ -71,17 +72,10 @@ module.exports = {
         },
         brand: {
           DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
-          50: '#f0f4ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
+          fg: 'rgb(var(--on-accent) / <alpha-value>)',
+          hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
           500: 'rgb(var(--color-accent) / <alpha-value>)',
           600: 'rgb(var(--color-accent) / <alpha-value>)',
-          700: '#0071e3',
-          800: '#005bb5',
-          900: '#004488',
-          950: '#0b0b0c',
         },
       },
       borderRadius: {

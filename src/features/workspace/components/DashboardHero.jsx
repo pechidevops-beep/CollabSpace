@@ -14,9 +14,9 @@ export default function DashboardHero() {
   const greeting = getGreeting();
 
   return (
-    <div className="mb-6 pt-1">
+    <div className="mb-8 pt-1">
       <h1 className="text-[28px] md:text-[32px] font-semibold text-text-main tracking-tight leading-tight">
-        {greeting}, <span className="text-accent">{displayName}</span>
+        {greeting}, {displayName}
       </h1>
       <p className="mt-1 text-sm text-text-sub leading-normal">
         Here is what is happening in your collaborative workspace today.

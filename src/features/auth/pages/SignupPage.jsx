@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import { AuthBrandPanel } from '../components/AuthBrandPanel';
 import { getFriendlyAuthErrorMessage } from '../utils/authErrors';
-import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
-import { ThemeToggle } from '../../../components/ui/ThemeToggle';
-import { Eye, EyeOff, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react';
+import Button from '../../../components/ui/Button';
+import Input from '../../../components/ui/Input';
+import ThemeToggle from '../../../components/ui/ThemeToggle';
+import { Eye, EyeOff, AlertCircle, ArrowLeft, Code2, CheckCircle2 } from 'lucide-react';
 
 export default function SignupPage() {
   const { signUpWithEmail, signInWithGoogle } = useAuth();
@@ -17,25 +16,20 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const [nameError, setNameError] = useState('');
+  const [fullNameError, setFullNameError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [generalError, setGeneralError] = useState('');
   const [successInfo, setSuccessInfo] = useState('');
-
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  const validateName = (val) => {
+  const validateFullName = (val) => {
     if (!val.trim()) {
-      setNameError('Full name is required');
+      setFullNameError('Name is required');
       return false;
     }
-    if (val.trim().length < 2) {
-      setNameError('Full name must be at least 2 characters');
-      return false;
-    }
-    setNameError('');
+    setFullNameError('');
     return true;
   };
 
@@ -71,7 +65,7 @@ export default function SignupPage() {
     setGeneralError('');
     setSuccessInfo('');
 
-    const isNameValid = validateName(fullName);
+    const isNameValid = validateFullName(fullName);
     const isEmailValid = validateEmail(email);
     const isPasswordValid = validatePassword(password);
 
@@ -109,47 +103,50 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-canvas text-text-main selection:bg-brand/20">
-      {/* Left: Product Mockup & Brand Panel */}
-      <AuthBrandPanel />
+    <div className="min-h-screen flex flex-col justify-between bg-canvas text-text-main p-4 sm:p-6 relative overflow-hidden select-none">
+      {/* Soft Ambient Radial Glow */}
+      <div className="page-accent-glow" aria-hidden="true" />
 
-      {/* Right: Auth Form Panel */}
-      <div className="relative flex-1 flex flex-col justify-between p-6 sm:p-12 lg:p-16 overflow-y-auto">
-        {/* Top bar */}
-        <div className="flex items-center justify-between w-full max-w-md mx-auto">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 text-xs text-text-sub hover:text-text-main transition-colors"
-          >
-            <ArrowLeft size={14} />
-            <span>Back to home</span>
-          </Link>
-          <ThemeToggle />
-        </div>
+      {/* Top Controls */}
+      <div className="w-full flex items-center justify-between relative z-20">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-xs text-text-sub hover:text-text-main transition-colors px-2 py-1 rounded-[8px] hover:bg-subtle"
+        >
+          <ArrowLeft size={14} />
+          <span>Back to home</span>
+        </Link>
+        <ThemeToggle size="sm" />
+      </div>
 
-        {/* Center Form Container */}
-        <div className="w-full max-w-sm mx-auto my-auto py-8">
-          <div className="mb-8">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-main">
-              Create your account
+      {/* Centered 400px Card */}
+      <div className="w-full max-w-[400px] mx-auto my-auto py-4 relative z-10 animate-fade-in">
+        <div className="card-signature p-6 sm:p-8">
+          {/* Logo & Heading */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="h-10 w-10 rounded-[10px] bg-accent text-on-accent flex items-center justify-center mb-3 shadow-sm">
+              <Code2 size={20} />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-text-main">
+              Create an account
             </h1>
-            <p className="text-xs sm:text-sm text-text-sub mt-1.5">
-              Start collaborating with your team or classroom.
+            <p className="text-xs text-text-sub mt-1">
+              Start collaborating on repositories and classroom assignments.
             </p>
           </div>
 
           {/* Success Info Banner */}
           {successInfo && (
-            <div className="mb-6 p-3.5 rounded-lg bg-semantic-success/10 border border-semantic-success/20 flex items-start gap-2.5 text-xs text-semantic-success animate-fadeIn">
-              <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+            <div className="mb-4 p-3 rounded-[10px] bg-semantic-success/10 border border-semantic-success/20 flex items-start gap-2.5 text-xs text-semantic-success animate-fade-in">
+              <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
               <span className="leading-relaxed">{successInfo}</span>
             </div>
           )}
 
           {/* General Error Banner */}
           {generalError && (
-            <div className="mb-6 p-3.5 rounded-lg bg-semantic-danger/10 border border-semantic-danger/20 flex items-start gap-2.5 text-xs text-semantic-danger animate-fadeIn">
-              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <div className="mb-4 p-3 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 flex items-start gap-2.5 text-xs text-semantic-danger animate-fade-in">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
               <span className="leading-relaxed">{generalError}</span>
             </div>
           )}
@@ -158,7 +155,7 @@ export default function SignupPage() {
           <Button
             type="button"
             variant="outline"
-            className="w-full h-10 mb-5 flex items-center justify-center gap-2.5 font-normal text-xs hover:bg-subtle"
+            className="w-full h-10 mb-4 font-normal text-xs"
             onClick={handleGoogleSignIn}
             disabled={isLoading || isGoogleLoading}
           >
@@ -184,32 +181,32 @@ export default function SignupPage() {
           </Button>
 
           {/* Divider */}
-          <div className="relative my-6 text-center">
+          <div className="relative my-4 text-center">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-border-dim" />
             </div>
-            <span className="relative px-3 bg-canvas text-[11px] text-text-dim uppercase tracking-wider">
+            <span className="relative px-2.5 bg-surface text-[10px] text-text-dim uppercase tracking-wider">
               or register with email
             </span>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
             <Input
-              id="fullName"
-              label="Full name"
+              id="name"
+              label="Full Name"
               type="text"
-              placeholder="Alex Johnson"
+              placeholder="Alex Rivers"
               autoComplete="name"
               value={fullName}
-              error={nameError}
+              error={fullNameError}
               disabled={isLoading}
               required
               onChange={(e) => {
                 setFullName(e.target.value);
-                if (nameError) validateName(e.target.value);
+                if (fullNameError) validateFullName(e.target.value);
               }}
-              onBlur={(e) => validateName(e.target.value)}
+              onBlur={(e) => validateFullName(e.target.value)}
             />
 
             <Input
@@ -237,7 +234,6 @@ export default function SignupPage() {
               autoComplete="new-password"
               value={password}
               error={passwordError}
-              helperText={!passwordError ? 'Minimum 6 characters' : undefined}
               disabled={isLoading}
               required
               onChange={(e) => {
@@ -262,8 +258,9 @@ export default function SignupPage() {
               <Button
                 type="submit"
                 variant="primary"
+                magnetic={true}
                 className="w-full h-10 font-medium text-xs shadow-sm"
-                isLoading={isLoading}
+                loading={isLoading}
                 disabled={isLoading}
               >
                 {isLoading ? 'Creating account...' : 'Create account'}
@@ -271,22 +268,22 @@ export default function SignupPage() {
             </div>
           </form>
 
-          {/* Footer Link */}
-          <div className="mt-6 text-center text-xs text-text-sub">
+          {/* Switch Link */}
+          <div className="mt-5 pt-4 border-t border-border-dim text-center text-xs text-text-sub">
             Already have an account?{' '}
             <Link
               to="/auth/login"
-              className="text-text-main font-medium hover:underline transition-colors"
+              className="text-text-main font-medium hover:underline transition-colors ml-1"
             >
               Sign in
             </Link>
           </div>
         </div>
+      </div>
 
-        {/* Bottom copyright/terms note */}
-        <div className="w-full max-w-sm mx-auto text-center text-[11px] text-text-dim">
-          <span>By signing up, you agree to our Terms of Service and Privacy Policy.</span>
-        </div>
+      {/* Footer copyright */}
+      <div className="w-full text-center text-[11px] text-text-dim relative z-10 py-2">
+        <span>CollabSpace. Collaborative Workspace for Code and Education.</span>
       </div>
     </div>
   );

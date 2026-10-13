@@ -22,11 +22,12 @@
     --color-warning: 178 80 0;
     --color-info: 0 113 164;
 
-    /* Theme A: Blue (Default Light) */
-    --color-accent: 0 113 227;
+    /* Locked Mint Accent (Light): #0A7F52, on-accent #FFFFFF (Contrast 5.11:1 > 4.5:1) */
+    --color-accent: 10 127 82;
+    --on-accent: 255 255 255;
     --color-accent-fg: 255 255 255;
-    --color-accent-hover: 0 99 204;
-    --color-ring: 0 113 227;
+    --color-accent-hover: 8 106 68;
+    --color-ring: 10 127 82;
 
     /* Radii Tokens */
     --radius-control: 10px;
@@ -36,35 +37,20 @@
     /* Legacy HSL Mappings for unmigrated components */
     --background: 220 20% 98%;
     --foreground: 224 25% 10%;
-    --primary: 211 100% 45%;
+    --primary: 157 85% 27%;
     --primary-foreground: 0 0% 100%;
     --secondary: 220 14% 96%;
     --secondary-foreground: 220 20% 12%;
     --muted: 220 14% 94%;
     --muted-foreground: 220 10% 46%;
-    --accent: 211 100% 45%;
+    --accent: 157 85% 27%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 211 100% 45%;
+    --ring: 157 85% 27%;
     --radius: 0.625rem;
-  }
-
-  /* Theme Accents (Light) */
-  html.theme-mint:not(.dark) {
-    --color-accent: 10 127 82;
-    --color-accent-fg: 255 255 255;
-    --color-accent-hover: 8 106 68;
-    --color-ring: 10 127 82;
-  }
-
-  html.theme-amber:not(.dark) {
-    --color-accent: 180 83 9;
-    --color-accent-fg: 255 255 255;
-    --color-accent-hover: 154 70 8;
-    --color-ring: 180 83 9;
   }
 
   .dark {
@@ -86,45 +72,29 @@
     --color-warning: 255 214 10;
     --color-info: 100 210 255;
 
-    /* Theme A: Blue (Default Dark) */
-    --color-accent: 10 132 255;
-    --color-accent-fg: 11 11 12;
-    --color-accent-hover: 50 150 255;
-    --color-ring: 10 132 255;
+    /* Locked Mint Accent (Dark): #3DDC97, on-accent #04120B (Contrast 10.7:1 > 4.5:1) */
+    --color-accent: 61 220 151;
+    --on-accent: 4 18 11;
+    --color-accent-fg: 4 18 11;
+    --color-accent-hover: 80 230 165;
+    --color-ring: 61 220 151;
 
     /* Legacy HSL Mappings for unmigrated components in dark mode */
     --background: 240 4% 4%;
     --foreground: 210 40% 98%;
-    --primary: 211 100% 52%;
-    --primary-foreground: 240 4% 4%;
+    --primary: 155 69% 55%;
+    --primary-foreground: 155 50% 4%;
     --secondary: 240 5% 10%;
     --secondary-foreground: 210 40% 98%;
     --muted: 240 4% 12%;
     --muted-foreground: 240 3% 65%;
-    --accent: 211 100% 52%;
-    --accent-foreground: 240 4% 4%;
+    --accent: 155 69% 55%;
+    --accent-foreground: 155 50% 4%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 240 4% 14%;
     --input: 240 4% 14%;
-    --ring: 211 100% 52%;
-  }
-
-  /* Theme Accents (Dark) */
-  html.dark.theme-mint,
-  html.theme-mint.dark {
-    --color-accent: 61 220 151;
-    --color-accent-fg: 11 11 12;
-    --color-accent-hover: 80 230 165;
-    --color-ring: 61 220 151;
-  }
-
-  html.dark.theme-amber,
-  html.theme-amber.dark {
-    --color-accent: 255 159 10;
-    --color-accent-fg: 11 11 12;
-    --color-accent-hover: 255 174 40;
-    --color-ring: 255 159 10;
+    --ring: 155 69% 55%;
   }
 }
 
@@ -176,36 +146,57 @@
   background: rgba(var(--color-border), 0.35);
 }
 
-/* ==========================================================================
-   LEGACY UTILITY CLASSES PRESERVED UNTIL FINAL STEP
-   ========================================================================== */
 @layer utilities {
-  .glass {
-    @apply bg-slate-900/70 backdrop-blur-md border border-white/10 shadow-glass;
+  /* Signature Look: Card Primitives */
+  .card-signature {
+    background-color: rgb(var(--color-surface));
+    border: 1px solid rgba(var(--color-border), var(--border-opacity, 0.08));
+    border-radius: 14px;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
   }
 
-  .glass-card {
-    @apply bg-surface border border-border-dim shadow-subtle transition-all duration-200;
+  .dark .card-signature {
+    background-color: rgb(var(--color-surface));
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(var(--color-border), 0.08);
   }
 
-  .glass-card:hover {
-    @apply border-border-strong;
-  }
-
-  .text-gradient {
-    @apply text-text-main;
-  }
-
-  .text-gradient-brand {
-    @apply text-accent font-semibold;
+  /* Page Ambient Glow (top center, 6-8% opacity, ~600px) */
+  .page-accent-glow {
+    pointer-events: none;
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(var(--color-accent), 0.07) 0%, transparent 70%);
+    filter: blur(48px);
+    z-index: 0;
   }
 
   .btn {
-    @apply relative inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] font-medium transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+    @apply relative inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-primary {
-    @apply bg-accent text-accent-fg hover:opacity-95 shadow-sm;
+    background-color: rgb(var(--color-accent));
+    color: rgb(var(--on-accent));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.08);
+    transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 3px 8px rgba(0, 0, 0, 0.12);
+  }
+
+  .btn-primary:active {
+    transform: scale(0.98);
   }
 
   .btn-secondary {
@@ -226,14 +217,6 @@
 
   .sidebar-link.active {
     @apply text-text-main bg-accent/10 border border-accent/20;
-  }
-
-  .btn-editor {
-    @apply inline-flex items-center gap-1.5 rounded-[6px] border border-border-dim bg-surface px-2.5 py-1 text-[11px] font-medium text-text-sub transition hover:border-border-strong hover:text-text-main disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
-  .btn-editor-primary {
-    @apply inline-flex items-center gap-1.5 rounded-[6px] bg-accent px-2.5 py-1 text-[11px] font-medium text-accent-fg transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
@@ -261,35 +244,30 @@
       transform: translateY(0);
     }
   }
+}
 
-  .glass-panel {
-    @apply bg-surface/90 backdrop-blur-md border border-border-dim;
+@media (hover: hover) and (pointer: fine) {
+  .spotlight-card {
+    position: relative;
+    overflow: hidden;
   }
-
-  .app-background {
-    background-color: rgb(var(--color-canvas));
+  .spotlight-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: radial-gradient(
+      500px circle at var(--mx, -999px) var(--my, -999px),
+      rgba(var(--color-accent), 0.10),
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 180ms ease;
+    z-index: 1;
   }
-
-  .drizzle-layer {
-    background-image: radial-gradient(rgba(var(--color-border), 0.08) 1px, transparent 1px);
-    background-size: 20px 20px;
-    opacity: 0.3;
-  }
-
-  .button-glow {
-    box-shadow: 0 0 0 1px rgba(var(--color-accent), 0.35);
-  }
-
-  .hover-float {
-    transition: transform 150ms ease, box-shadow 150ms ease;
-  }
-
-  .hover-float:hover {
-    transform: translateY(-1px);
-  }
-
-  .animate-spin-slow {
-    animation: spin 8s linear infinite;
+  .spotlight-card:hover::before {
+    opacity: 1;
   }
 }
 
