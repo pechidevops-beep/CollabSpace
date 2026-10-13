@@ -183,7 +183,7 @@ export default function SignupPage() {
           {/* Divider */}
           <div className="relative my-4 text-center">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border-dim" />
+              <div className="w-full border-t border-border-subtle" />
             </div>
             <span className="relative px-2.5 bg-surface text-[10px] text-text-dim uppercase tracking-wider">
               or register with email
@@ -269,7 +269,7 @@ export default function SignupPage() {
           </form>
 
           {/* Switch Link */}
-          <div className="mt-5 pt-4 border-t border-border-dim text-center text-xs text-text-sub">
+          <div className="mt-5 pt-4 border-t border-border-subtle text-center text-xs text-text-sub">
             Already have an account?{' '}
             <Link
               to="/auth/login"

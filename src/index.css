@@ -10,7 +10,8 @@
     --color-elevated: 255 255 255;
     --color-subtle: 245 245 248;
     --color-border: 0 0 0;
-    --border-opacity: 0.07;
+    --border-opacity: 0.06;
+    --border-subtle: rgb(0 0 0 / 0.06);
 
     --color-text: 29 29 31;
     --color-text-sub: 110 110 115;
@@ -60,7 +61,8 @@
     --color-elevated: 28 28 31;
     --color-subtle: 24 24 27;
     --color-border: 255 255 255;
-    --border-opacity: 0.08;
+    --border-opacity: 0.06;
+    --border-subtle: rgb(255 255 255 / 0.06);
 
     --color-text: 245 245 247;
     --color-text-sub: 161 161 166;
@@ -146,36 +148,44 @@
   background: rgba(var(--color-border), 0.35);
 }
 
-@layer utilities {
+@layer components {
   /* Signature Look: Card Primitives */
   .card-signature {
     background-color: rgb(var(--color-surface));
-    border-radius: 16px !important;
+    border-radius: 16px;
     position: relative;
-    border: none !important;
-    outline: none !important;
-    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.08) !important;
+    border-style: none;
+    border-width: 0;
+    outline: none;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.08);
   }
 
   .dark .card-signature {
     background-color: rgb(var(--color-surface));
     background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    border-style: solid;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
   }
 
   /* Shared Card Row / List Item Primitive */
   .card-row {
     border-radius: 10px;
     background-color: rgba(0, 0, 0, 0.02);
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-style: solid;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0.05);
     transition: background-color 150ms ease, border-color 150ms ease;
   }
 
   .dark .card-row {
     background-color: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.06);
   }
+}
+
+@layer utilities {
 
   /* Page Ambient Glow (top center, 6-8% opacity, ~600px) */
   .page-accent-glow {
@@ -214,11 +224,11 @@
   }
 
   .btn-secondary {
-    @apply bg-surface text-text-main hover:bg-subtle border border-border-dim hover:border-border-strong;
+    @apply bg-black/5 hover:bg-black/8 dark:bg-white/6 dark:hover:bg-white/10 text-text-main border-0;
   }
 
   .btn-ghost {
-    @apply text-text-sub hover:text-text-main hover:bg-subtle;
+    @apply text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 border-0;
   }
 
   .sidebar-link {

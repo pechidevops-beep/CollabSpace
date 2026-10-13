@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
-    pending: { label: 'Pending', color: 'text-text-dim', bg: 'bg-subtle', border: 'border-border-dim' },
+    pending: { label: 'Pending', color: 'text-text-dim', bg: 'bg-black/5 dark:bg-white/6', border: 'border-border-subtle' },
     submitted: { label: 'Submitted', color: 'text-accent', bg: 'bg-accent/10', border: 'border-accent/20' },
     reviewed: { label: 'Reviewed', color: 'text-semantic-success', bg: 'bg-semantic-success/10', border: 'border-semantic-success/20' },
     returned: { label: 'Returned', color: 'text-semantic-warning', bg: 'bg-semantic-warning/10', border: 'border-semantic-warning/20' },
@@ -213,7 +213,7 @@ export default function AssignmentPage() {
                                     Submitted on {new Date(mySubmission.submitted_at).toLocaleString()}
                                 </p>
                                 {mySubmission.grade !== null && mySubmission.grade !== undefined && (
-                                    <div className="mt-2 p-3.5 bg-subtle rounded-[10px] border border-border-dim">
+                                    <div className="mt-2 p-3.5 bg-subtle rounded-[10px] border border-border-subtle">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Star size={14} className="text-amber-500" />
                                             <span className="text-xs font-semibold text-text-main">Grade: {mySubmission.grade}/{maxPts}</span>
@@ -234,7 +234,7 @@ export default function AssignmentPage() {
                                             value={repoLink}
                                             onChange={e => setRepoLink(e.target.value)}
                                             placeholder="Update: paste repo ID or link"
-                                            className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            className="flex-1 bg-subtle border border-border-subtle rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                         />
                                         <Button type="submit" variant="secondary" size="sm" icon={Send} disabled={submitting || !repoLink.trim()}>
                                             Re-submit
@@ -252,7 +252,7 @@ export default function AssignmentPage() {
                                             value={repoLink}
                                             onChange={e => setRepoLink(e.target.value)}
                                             placeholder="Repository ID or link"
-                                            className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            className="flex-1 bg-subtle border border-border-subtle rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                             disabled={isPastDue}
                                         />
                                         <Button
@@ -308,7 +308,7 @@ export default function AssignmentPage() {
                                     <Card key={s.id} className="p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-subtle border border-border-dim flex items-center justify-center text-[11px] font-semibold text-text-main">
+                                                <div className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/6 flex items-center justify-center text-[11px] font-semibold text-text-main">
                                                     {(s.student_name || '?')[0].toUpperCase()}
                                                 </div>
                                                 <div>
@@ -357,7 +357,7 @@ export default function AssignmentPage() {
                                             <p className="text-xs text-text-sub bg-subtle p-2.5 rounded-md mt-1 leading-relaxed">{s.feedback}</p>
                                         )}
                                         {gradingId === s.id && (
-                                            <div className="mt-3 p-3.5 bg-subtle rounded-[10px] border border-border-dim space-y-2.5 animate-fade-in">
+                                            <div className="mt-3 p-3.5 bg-subtle rounded-[10px] border border-border-subtle space-y-2.5 animate-fade-in">
                                                 <div className="flex items-center gap-2">
                                                     <label className="text-xs text-text-main w-16">Grade</label>
                                                     <input
@@ -366,7 +366,7 @@ export default function AssignmentPage() {
                                                         max={maxPts}
                                                         value={gradeVal}
                                                         onChange={e => setGradeVal(e.target.value)}
-                                                        className="w-24 bg-surface border border-border-dim rounded-md px-2 py-1 text-xs text-text-main outline-none focus:border-brand"
+                                                        className="w-24 bg-surface border border-border-subtle rounded-md px-2 py-1 text-xs text-text-main outline-none focus:border-brand"
                                                         placeholder={`0-${maxPts}`}
                                                     />
                                                     <span className="text-[11px] text-text-dim">/ {maxPts}</span>
@@ -377,7 +377,7 @@ export default function AssignmentPage() {
                                                         value={feedbackVal}
                                                         onChange={e => setFeedbackVal(e.target.value)}
                                                         rows={2}
-                                                        className="flex-1 bg-surface border border-border-dim rounded-md px-2 py-1.5 text-xs text-text-main outline-none focus:border-brand resize-none"
+                                                        className="flex-1 bg-surface border border-border-subtle rounded-md px-2 py-1.5 text-xs text-text-main outline-none focus:border-brand resize-none"
                                                         placeholder="Optional feedback…"
                                                     />
                                                 </div>

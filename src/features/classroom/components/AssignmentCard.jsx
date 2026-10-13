@@ -17,8 +17,8 @@ export default function AssignmentCard({ assignment, workspaceId, submission }) 
     // Status determination
     let StatusIcon = CircleDashed;
     let statusColor = 'text-text-dim';
-    let statusBg = 'bg-subtle';
-    let statusBorder = 'border-border-dim';
+    let statusBg = 'bg-black/5 dark:bg-white/6';
+    let statusBorder = 'border-border-subtle';
     let statusText = 'Pending';
 
     if (progress === 100) {
@@ -75,7 +75,7 @@ export default function AssignmentCard({ assignment, workspaceId, submission }) 
                     )}
 
                     {/* Progress Bar */}
-                    <div className="w-full h-1.5 bg-subtle border border-border-dim rounded-full overflow-hidden">
+                    <div className="w-full h-1.5 bg-black/6 dark:bg-white/8 rounded-full overflow-hidden">
                         <div
                             className={`h-full rounded-full transition-all duration-300 ${
                                 progress === 100 ? 'bg-semantic-success' : 'bg-brand'

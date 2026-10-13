@@ -253,13 +253,13 @@ export default function RepositoryPage() {
                         </div>
 
                         {fileFormOpen && (
-                            <form onSubmit={handleCreateSubmit} className="p-3 rounded-[10px] bg-surface border border-border-dim shadow-subtle mb-3 animate-fade-in flex items-center gap-3">
+                            <form onSubmit={handleCreateSubmit} className="p-3 rounded-[10px] bg-surface border border-border-subtle shadow-subtle mb-3 animate-fade-in flex items-center gap-3">
                                 <span className="text-xs text-text-sub">New {fileFormType}:</span>
                                 <input
                                     autoFocus
                                     value={newItemName}
                                     onChange={e => setNewItemName(e.target.value)}
-                                    className="flex-1 bg-subtle border border-border-dim rounded-md px-2.5 py-1 text-xs text-text-main outline-none focus:border-brand"
+                                    className="flex-1 bg-subtle border border-border-subtle rounded-md px-2.5 py-1 text-xs text-text-main outline-none focus:border-brand"
                                     placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.ext'}
                                 />
                                 <Button type="submit" variant="primary" size="sm" loading={creating}>
@@ -290,7 +290,7 @@ export default function RepositoryPage() {
                                 <div className="text-xs text-text-sub leading-relaxed prose-invert">
                                     <ReactMarkdown>{readmeContent}</ReactMarkdown>
                                 </div>
-                                <p className="mt-4 pt-3 border-t border-border-dim text-[11px] text-text-dim">
+                                <p className="mt-4 pt-3 border-t border-border-subtle text-[11px] text-text-dim">
                                     Last updated: {readmeFile?.last_modified_at ? new Date(readmeFile.last_modified_at).toLocaleString() : 'Unknown'}
                                 </p>
                             </Card>

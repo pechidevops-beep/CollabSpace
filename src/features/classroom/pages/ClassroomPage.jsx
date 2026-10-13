@@ -116,6 +116,11 @@ export default function ClassroomPage() {
     const past = assignments.filter(a => a.due_date && new Date(a.due_date) < now);
     const displayed = tab === 'active' ? active : past;
 
+    // Mutually exclusive counts: each assignment belongs to exactly one state
+    const submittedCount = assignments.filter(a => Boolean(submissions[a.id])).length;
+    const dueSoonCount = assignments.filter(a => !submissions[a.id] && (!a.due_date || new Date(a.due_date) >= now)).length;
+    const notSubmittedCount = assignments.filter(a => !submissions[a.id] && a.due_date && new Date(a.due_date) < now).length;
+
     // View when no workspaceId in URL (global assessments index)
     if (!workspaceId) {
         return (
@@ -151,7 +156,7 @@ export default function ClassroomPage() {
                                 {workspaceOptions.map((ws) => (
                                     <li
                                         key={ws.id}
-                                        className="flex items-center justify-between rounded-[10px] border border-border-dim bg-subtle px-3.5 py-2.5 transition hover:border-border-strong hover:bg-surface"
+                                        className="flex items-center justify-between rounded-[10px] border border-border-subtle bg-black/5 dark:bg-white/6 px-3.5 py-2.5 transition hover:bg-black/8 dark:hover:bg-white/10"
                                     >
                                         <div>
                                             <Link
@@ -259,7 +264,7 @@ export default function ClassroomPage() {
                                     onChange={e => setDescription(e.target.value)}
                                     placeholder="Instructions & description (optional)"
                                     rows={3}
-                                    className="w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
+                                    className="w-full rounded-md bg-subtle border border-border-subtle text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
                                 />
                             </div>
                             <div className="flex flex-col gap-1.5 w-full">
@@ -271,7 +276,7 @@ export default function ClassroomPage() {
                                     type="datetime-local"
                                     value={dueDate}
                                     onChange={e => setDueDate(e.target.value)}
-                                    className="h-9 w-full sm:w-64 rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                    className="h-9 w-full sm:w-64 rounded-md bg-subtle border border-border-subtle text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                 />
                             </div>
                             <div className="flex gap-2 justify-end pt-2">
@@ -300,17 +305,9 @@ export default function ClassroomPage() {
                 {/* Stat summary */}
                 <div className="grid grid-cols-3 gap-4">
                     {[
-                        { label: 'Active', value: active.length, color: 'text-semantic-success' },
-                        {
-                            label: 'Completed',
-                            value: Object.values(submissions).filter(s => s.grade !== null && s.grade !== undefined).length,
-                            color: 'text-accent',
-                        },
-                        {
-                            label: 'Pending',
-                            value: assignments.length - Object.keys(submissions).length,
-                            color: 'text-semantic-warning',
-                        },
+                        { label: 'Due soon', value: dueSoonCount, color: 'text-accent' },
+                        { label: 'Submitted', value: submittedCount, color: 'text-semantic-success' },
+                        { label: 'Not submitted', value: notSubmittedCount, color: 'text-semantic-warning' },
                     ].map((s, i) => (
                         <Card key={i} className="p-4 text-center">
                             <p className="text-2xl font-bold text-text-main tracking-tight leading-none">{s.value}</p>
@@ -320,7 +317,7 @@ export default function ClassroomPage() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex items-center gap-1 border-b border-border-dim">
+                <div className="flex items-center gap-1 border-b border-border-subtle">
                     <button
                         onClick={() => setTab('active')}
                         className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${tab === 'active'

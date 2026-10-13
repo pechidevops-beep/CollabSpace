@@ -108,7 +108,7 @@ export const CardFooter = forwardRef(function CardFooter(
   return (
     <div
       ref={ref}
-      className={`flex items-center p-5 pt-0 border-t border-border-dim/50 mt-4 text-xs text-text-sub ${className}`}
+      className={`flex items-center p-5 pt-0 border-t border-border-subtle mt-4 text-xs text-text-sub ${className}`}
       {...props}
     >
       {children}

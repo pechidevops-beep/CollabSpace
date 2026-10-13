@@ -14,10 +14,10 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={`flex flex-col items-center justify-center text-center p-8 md:p-12 rounded-lg border border-border-dim bg-surface/50 ${className}`}
+      className={`flex flex-col items-center justify-center text-center p-8 md:p-12 rounded-lg border border-border-subtle bg-surface/50 ${className}`}
     >
       {Icon && (
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-subtle border border-border-dim text-text-sub mb-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black/5 dark:bg-white/6 text-text-sub mb-4">
           <Icon size={22} />
         </div>
       )}

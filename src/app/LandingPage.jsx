@@ -152,7 +152,7 @@ export default function LandingPage() {
       <div className="page-accent-glow" aria-hidden="true" />
 
       {/* Sticky Blurred Nav */}
-      <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-canvas/80 border-b border-border-dim">
+      <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-canvas/80 border-b border-border-subtle">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Link to="/" className="flex items-center gap-2.5 group">
             <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-accent text-on-accent shadow-sm group-hover:scale-105 transition-transform">
@@ -195,7 +195,7 @@ export default function LandingPage() {
       {/* Hero Section */}
       <section className="relative px-6 pt-20 pb-16 text-center max-w-5xl mx-auto">
         {/* Subtle pill tag */}
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-subtle border border-border-dim text-[11px] font-medium text-text-sub mb-6">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/5 dark:bg-white/6 border border-border-subtle text-[11px] font-medium text-text-sub mb-6">
           <Sparkles size={13} className="text-accent" />
           <span>Next-generation workspace for code and education</span>
         </div>
@@ -241,10 +241,10 @@ export default function LandingPage() {
         <div className="mt-16 sm:mt-20 max-w-5xl mx-auto perspective-1000">
           <div
             ref={mockupRef}
-            className="rounded-2xl border border-border-dim bg-surface p-2 shadow-2xl transition-transform duration-200"
+            className="rounded-2xl border border-border-subtle bg-surface p-2 shadow-2xl transition-transform duration-200"
           >
             {/* Window chrome header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-border-dim/60 mb-2">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle mb-2">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-semantic-danger/60" />
                 <span className="w-2.5 h-2.5 rounded-full bg-semantic-warning/60" />
@@ -256,7 +256,7 @@ export default function LandingPage() {
               <div className="w-12" />
             </div>
 
-            <div className="rounded-[10px] overflow-hidden bg-canvas aspect-[16/9] border border-border-dim">
+            <div className="rounded-[10px] overflow-hidden bg-canvas aspect-[16/9] border border-border-subtle">
               <img
                 src="/screens/editor.png"
                 alt="CollabSpace Code Editor and Workspace"
@@ -277,7 +277,7 @@ export default function LandingPage() {
         <div className="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
           {/* Chapter Text Column (5 cols) */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-subtle border border-border-dim text-[11px] font-semibold text-accent uppercase tracking-wider">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-black/5 dark:bg-white/6 border border-border-subtle text-[11px] font-semibold text-accent uppercase tracking-wider">
               {chapters[activeChapter].badge}
             </div>
 
@@ -313,7 +313,7 @@ export default function LandingPage() {
           {/* Chapter Mockup Column (7 cols) with Crossfading Screenshot */}
           <div className="lg:col-span-7">
             <div className="card-signature p-2.5 shadow-2xl relative">
-              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-dim/60 mb-2">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle mb-2">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-border-strong" />
                   <span className="w-2 h-2 rounded-full bg-border-strong" />
@@ -325,7 +325,7 @@ export default function LandingPage() {
                 <div className="w-8" />
               </div>
 
-              <div className="relative aspect-[16/10] rounded-[10px] overflow-hidden bg-subtle border border-border-dim">
+              <div className="relative aspect-[16/10] rounded-[10px] overflow-hidden bg-subtle border border-border-subtle">
                 {chapters.map((ch, idx) => (
                   <img
                     key={ch.id}
@@ -365,7 +365,7 @@ export default function LandingPage() {
                 }`}
               >
                 <div>
-                  <div className="h-10 w-10 rounded-[10px] bg-subtle border border-border-dim flex items-center justify-center text-accent mb-4">
+                  <div className="h-10 w-10 rounded-[10px] bg-black/5 dark:bg-white/6 flex items-center justify-center text-accent mb-4">
                     <Icon size={20} />
                   </div>
                   <h3 className="text-sm font-semibold text-text-main tracking-tight">
@@ -382,7 +382,7 @@ export default function LandingPage() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-20 px-6 text-center max-w-4xl mx-auto border-t border-border-dim">
+      <section className="py-20 px-6 text-center max-w-4xl mx-auto border-t border-border-subtle">
         <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-main">
           Ready to experience CollabSpace?
         </h2>
@@ -404,7 +404,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border-dim py-10 px-6 bg-surface/50">
+      <footer className="border-t border-border-subtle py-10 px-6 bg-surface/50">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-text-dim">
           <div className="flex items-center gap-2">
             <div className="h-6 w-6 rounded-[6px] bg-accent text-on-accent flex items-center justify-center text-[10px] font-bold">

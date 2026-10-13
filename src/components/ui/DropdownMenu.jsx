@@ -56,7 +56,7 @@ export function DropdownMenu({
             exit={{ opacity: 0, scale: 0.96, y: -4 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
             role="menu"
-            className={`absolute z-50 mt-1.5 w-48 rounded-[10px] bg-elevated border border-border-dim shadow-card p-1 text-text-main focus:outline-none ${alignClasses[align] || alignClasses.right} ${className}`}
+            className={`absolute z-50 mt-1.5 w-48 rounded-[10px] bg-elevated border border-border-subtle shadow-card p-1 text-text-main focus:outline-none ${alignClasses[align] || alignClasses.right} ${className}`}
           >
             <div onClick={() => setIsOpen(false)}>{children}</div>
           </motion.div>

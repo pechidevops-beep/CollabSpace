@@ -11,13 +11,13 @@ export default function RepositoryCard({ repo }) {
             <Card interactive={true} className="p-5 h-full flex flex-col justify-between">
                 <div>
                     <div className="flex items-start justify-between mb-3.5">
-                        <div className="p-2.5 bg-subtle border border-border-dim text-accent rounded-[10px] group-hover:border-border-strong transition-colors">
+                        <div className="p-2.5 bg-black/5 dark:bg-white/6 text-accent rounded-[10px] transition-colors">
                             <FolderGit2 size={18} />
                         </div>
                         <div className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 ${
                             isPrivate
                                 ? 'text-semantic-warning bg-semantic-warning/10 border-semantic-warning/20'
-                                : 'text-text-dim bg-subtle border-border-dim'
+                                : 'text-text-dim bg-black/5 dark:bg-white/6 border-border-subtle'
                         }`}>
                             {isPrivate ? <Lock size={10} /> : <Globe size={10} />}
                             <span>{isPrivate ? 'Private' : 'Public'}</span>
@@ -33,7 +33,7 @@ export default function RepositoryCard({ repo }) {
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3.5 text-[11px] text-text-dim pt-3 border-t border-border-dim font-medium">
+                <div className="flex items-center gap-3.5 text-[11px] text-text-dim pt-3 border-t border-border-subtle font-medium">
                     {repo.language && (
                         <div className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-accent inline-block" />

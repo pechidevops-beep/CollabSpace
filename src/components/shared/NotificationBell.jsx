@@ -110,10 +110,10 @@ export default function NotificationBell() {
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setOpen(prev => !prev)}
-                className="relative p-2 rounded-lg hover:bg-subtle transition-colors text-text-sub hover:text-text-main"
+                className="relative h-8 w-8 flex items-center justify-center rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 title="Notifications"
             >
-                <Bell size={17} />
+                <Bell size={16} />
                 {unread > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center text-[9px] font-bold text-white bg-semantic-danger rounded-full min-w-[16px] h-4 px-1 shadow-sm">
                         {unread > 99 ? '99+' : unread}
@@ -122,9 +122,9 @@ export default function NotificationBell() {
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border-dim rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in">
+                <div className="absolute right-0 top-full mt-2 w-80 bg-surface border border-border-subtle rounded-2xl shadow-2xl z-50 overflow-hidden animate-fade-in">
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-border-dim">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
                         <h3 className="text-xs font-semibold text-text-main">Notifications</h3>
                         {unread > 0 && (
                             <button
@@ -153,7 +153,7 @@ export default function NotificationBell() {
                             notifications.map(n => (
                                 <div
                                     key={n.id}
-                                    className={`flex items-start gap-3 px-4 py-3 border-b border-border-dim last:border-b-0 hover:bg-subtle transition-colors group ${
+                                    className={`flex items-start gap-3 px-4 py-3 border-b border-border-subtle last:border-b-0 hover:bg-subtle transition-colors group ${
                                         !n.read ? 'bg-accent/5' : ''
                                     }`}
                                 >

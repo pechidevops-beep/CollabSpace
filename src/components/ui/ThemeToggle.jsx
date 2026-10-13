@@ -12,7 +12,7 @@ export function ThemeToggle({ className = '', size = 'md' }) {
       type="button"
       onClick={toggleTheme}
       aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
-      className={`relative inline-flex items-center justify-center rounded-md border border-border-dim bg-subtle text-text-sub hover:text-text-main hover:bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-95 ${
+      className={`relative inline-flex items-center justify-center rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-95 ${
         size === 'sm' ? 'h-7 w-7' : 'h-8 w-8'
       } ${className}`}
     >

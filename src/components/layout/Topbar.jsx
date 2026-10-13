@@ -90,7 +90,7 @@ export default function Topbar({ onOpenCmd }) {
   });
 
   return (
-    <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-dim bg-surface/80 backdrop-blur-md sticky top-0 z-20 select-none">
+    <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-subtle bg-surface/80 backdrop-blur-md sticky top-0 z-20 select-none">
       {/* Breadcrumbs with resolved entity names */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs">
         <Link
@@ -132,14 +132,14 @@ export default function Topbar({ onOpenCmd }) {
           trigger={
             <button
               type="button"
-              className="h-8 w-8 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-semibold border border-accent/20 hover:scale-105 active:scale-95 transition-transform"
+              className="h-8 w-8 rounded-full bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-main flex items-center justify-center text-xs font-semibold hover:scale-105 active:scale-95 transition-transform"
               aria-label="User profile menu"
             >
               {initials}
             </button>
           }
         >
-          <div className="px-3 py-2 border-b border-border-dim">
+          <div className="px-3 py-2 border-b border-border-subtle">
             <div className="text-xs font-semibold text-text-main truncate">{displayName}</div>
             <div className="text-[11px] text-text-dim truncate">{user?.email}</div>
           </div>
@@ -168,7 +168,7 @@ export function MobileNavBar() {
   return (
     <nav
       aria-label="Mobile Navigation"
-      className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-surface/95 backdrop-blur-xl border-t border-border-dim z-40 flex items-center justify-around px-4 select-none"
+      className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-surface/95 backdrop-blur-xl border-t border-border-subtle z-40 flex items-center justify-around px-4 select-none"
     >
       {links.map((link) => {
         const Icon = link.icon;

@@ -126,7 +126,7 @@ function TreeNode({
             {contextMenu && !renaming && (
                 <div
                     ref={menuRef}
-                    className="ml-6 mb-1 bg-surface border border-border-dim rounded-[10px] shadow-2xl text-xs overflow-hidden z-50 py-1"
+                    className="ml-6 mb-1 bg-surface border border-border-subtle rounded-[10px] shadow-2xl text-xs overflow-hidden z-50 py-1"
                     style={{ marginLeft: `${depth * 12 + 20}px` }}
                 >
                     {isFolder && (
@@ -159,7 +159,7 @@ function TreeNode({
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); setContextMenu(false); }}
-                        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-subtle text-text-dim text-left border-t border-border-dim text-xs"
+                        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-subtle text-text-dim text-left border-t border-border-subtle text-xs"
                     >
                         <X size={12} /> Close
                     </button>

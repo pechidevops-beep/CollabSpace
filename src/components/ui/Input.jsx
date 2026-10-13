@@ -55,7 +55,7 @@ export const Input = forwardRef(function Input(
             disabled:opacity-50 disabled:cursor-not-allowed
             ${Icon ? 'pl-9' : ''}
             ${rightElement ? 'pr-9' : ''}
-            ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-dim'}
+            ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-subtle'}
             ${inputClassName}`}
           {...props}
         />
@@ -124,7 +124,7 @@ export const Textarea = forwardRef(function Textarea(
           hover:border-border-strong
           focus:bg-surface focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20
           disabled:opacity-50 disabled:cursor-not-allowed
-          ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-dim'}
+          ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-subtle'}
           ${textareaClassName}`}
         {...props}
       />
@@ -185,7 +185,7 @@ export const Select = forwardRef(function Select(
           hover:border-border-strong
           focus:bg-surface focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20
           disabled:opacity-50 disabled:cursor-not-allowed
-          ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-dim'}
+          ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-subtle'}
           ${selectClassName}`}
         {...props}
       >

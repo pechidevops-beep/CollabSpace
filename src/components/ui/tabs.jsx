@@ -16,7 +16,7 @@ export function Tabs({
       role="tablist"
       aria-label="Tabs"
       className={`inline-flex items-center gap-1 p-1 rounded-md ${
-        variant === 'pill' ? 'bg-subtle border border-border-dim' : 'border-b border-border-dim p-0 rounded-none w-full'
+        variant === 'pill' ? 'bg-black/5 dark:bg-white/6' : 'border-b border-border-subtle p-0 rounded-none w-full'
       } ${className}`}
     >
       {tabs.map((tab) => {
@@ -33,7 +33,7 @@ export function Tabs({
             type="button"
             onClick={() => onChange(tab.id)}
             className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium transition-colors select-none z-10
-              ${variant === 'pill' ? 'rounded-sm' : 'border-b-2 border-transparent pb-2.5 px-4'}
+              ${variant === 'pill' ? 'rounded-[8px]' : 'border-b-2 border-transparent pb-2.5 px-4'}
               ${isActive ? 'text-text-main font-semibold' : 'text-text-sub hover:text-text-main'}
               ${tabClassName}`}
           >
@@ -41,7 +41,7 @@ export function Tabs({
               <motion.div
                 layoutId={`active-pill-${instanceId}`}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                className="absolute inset-0 bg-surface rounded-sm border border-border-dim shadow-subtle -z-10"
+                className="absolute inset-0 bg-surface rounded-[8px] border border-border-subtle shadow-subtle -z-10"
               />
             )}
 
@@ -49,7 +49,7 @@ export function Tabs({
               <motion.div
                 layoutId={`active-underline-${instanceId}`}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand -z-10"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent z-10"
               />
             )}
 

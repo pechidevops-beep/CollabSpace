@@ -57,7 +57,7 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? 'modal-title' : undefined}
-            className={`relative w-full ${maxWidth} rounded-lg bg-surface border border-border-dim shadow-elevated p-6 text-text-main z-10 overflow-hidden ${className}`}
+            className={`relative w-full ${maxWidth} rounded-lg bg-surface border border-border-subtle shadow-elevated p-6 text-text-main z-10 overflow-hidden ${className}`}
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-4 mb-4">

@@ -1,13 +1,13 @@
 import React from 'react';
 
 const badgeVariants = {
-  default: 'bg-subtle text-text-sub border-border-dim',
-  accent: 'bg-accent/15 text-accent border-accent/25 font-semibold',
-  success: 'bg-semantic-success/15 text-semantic-success border-semantic-success/25',
-  danger: 'bg-semantic-danger/15 text-semantic-danger border-semantic-danger/25',
-  warning: 'bg-semantic-warning/15 text-semantic-warning border-semantic-warning/25',
-  info: 'bg-semantic-info/15 text-semantic-info border-semantic-info/25',
-  outline: 'bg-transparent text-text-sub border-border-dim',
+  default: 'bg-black/5 dark:bg-white/6 text-text-sub border-border-subtle',
+  accent: 'bg-accent/10 text-accent border-accent/20 font-semibold',
+  success: 'bg-semantic-success/10 text-semantic-success border-semantic-success/20',
+  danger: 'bg-semantic-danger/10 text-semantic-danger border-semantic-danger/20',
+  warning: 'bg-semantic-warning/10 text-semantic-warning border-semantic-warning/20',
+  info: 'bg-semantic-info/10 text-semantic-info border-semantic-info/20',
+  outline: 'bg-transparent text-text-sub border-border-subtle',
 };
 
 const badgeSizes = {

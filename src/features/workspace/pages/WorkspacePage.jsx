@@ -167,14 +167,6 @@ export default function WorkspacePage() {
                         {members.length} member{members.length !== 1 ? 's' : ''} · {repositories.length} repo{repositories.length !== 1 ? 's' : ''}
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            icon={BookOpen}
-                            onClick={() => navigate(`/app/workspace/${workspaceId}/assessments`)}
-                        >
-                            Assessments
-                        </Button>
                         {canCreateRepo && (
                             <Button
                                 variant="primary"
@@ -245,7 +237,7 @@ export default function WorkspacePage() {
                                     onChange={e => setRepoDesc(e.target.value)}
                                     placeholder="Brief description of this repository"
                                     rows={2}
-                                    className="w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
+                                    className="w-full rounded-md bg-subtle border border-border-subtle text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
@@ -254,7 +246,7 @@ export default function WorkspacePage() {
                                     <select
                                         value={repoVisibility}
                                         onChange={e => setRepoVisibility(e.target.value)}
-                                        className="h-9 w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                        className="h-9 w-full rounded-md bg-subtle border border-border-subtle text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                     >
                                         <option value="public">Public</option>
                                         <option value="private">Private</option>
@@ -265,7 +257,7 @@ export default function WorkspacePage() {
                                     <select
                                         value={repoLanguage}
                                         onChange={e => setRepoLanguage(e.target.value)}
-                                        className="h-9 w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                        className="h-9 w-full rounded-md bg-subtle border border-border-subtle text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                     >
                                         <option value="">None</option>
                                         <option value="JavaScript">JavaScript</option>
@@ -358,7 +350,7 @@ export default function WorkspacePage() {
                                     value={inviteEmail}
                                     onChange={e => setInviteEmail(e.target.value)}
                                     placeholder="Enter user email to invite"
-                                    className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                    className="flex-1 bg-subtle border border-border-subtle rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                 />
                                 <Button
                                     type="submit"
@@ -390,14 +382,14 @@ export default function WorkspacePage() {
                             const roleBadgeClass = {
                                 owner: 'text-semantic-warning bg-semantic-warning/10 border-semantic-warning/20',
                                 admin: 'text-accent bg-accent/10 border-accent/20',
-                                contributor: 'text-text-main bg-subtle border-border-dim',
-                                viewer: 'text-text-dim bg-subtle border-border-dim',
-                            }[m.role] || 'text-text-dim bg-subtle border-border-dim';
+                                contributor: 'text-text-main bg-black/5 dark:bg-white/6 border-border-subtle',
+                                viewer: 'text-text-dim bg-black/5 dark:bg-white/6 border-border-subtle',
+                            }[m.role] || 'text-text-dim bg-black/5 dark:bg-white/6 border-border-subtle';
 
                             return (
                                 <CardRow key={m.id} className="p-3.5 group hover:border-border-strong">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-subtle border border-border-dim flex items-center justify-center text-[11px] font-semibold text-text-main">
+                                        <div className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/6 flex items-center justify-center text-[11px] font-semibold text-text-main">
                                             {(m.profiles?.full_name || m.profiles?.email || '?')[0].toUpperCase()}
                                         </div>
                                         <div>
@@ -428,7 +420,7 @@ export default function WorkspacePage() {
                                                         setError(err.message);
                                                     }
                                                 }}
-                                                className="text-[11px] bg-subtle border border-border-dim rounded-md px-2 py-1 text-text-main outline-none focus:border-brand cursor-pointer"
+                                                className="text-[11px] bg-subtle border border-border-subtle rounded-md px-2 py-1 text-text-main outline-none focus:border-brand cursor-pointer"
                                             >
                                                 {AVAILABLE_ROLES.filter(r => r.value !== 'owner').map(r => (
                                                     <option key={r.value} value={r.value}>{r.label}</option>

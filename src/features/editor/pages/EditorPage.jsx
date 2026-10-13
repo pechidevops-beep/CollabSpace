@@ -458,7 +458,7 @@ export default function EditorPage() {
     return (
         <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-canvas text-text-main select-none">
             {/* Slim Top Bar (40px, one row, 8px gaps) */}
-            <header className="h-10 shrink-0 bg-surface border-b border-border-dim px-3 flex items-center justify-between gap-2 z-20">
+            <header className="h-10 shrink-0 bg-surface border-b border-border-subtle px-3 flex items-center justify-between gap-2 z-20">
                 {/* Left: Back button + Breadcrumb (Workspace > Repo > File) */}
                 <div className="flex items-center gap-2 min-w-0">
                     <Link
@@ -470,7 +470,7 @@ export default function EditorPage() {
                         <span className="hidden sm:inline">Back</span>
                     </Link>
 
-                    <div className="h-4 w-px bg-border-dim shrink-0" />
+                    <div className="h-4 w-px bg-border-subtle shrink-0" />
 
                     {/* Collapsible explorer toggle button */}
                     <button
@@ -578,7 +578,7 @@ export default function EditorPage() {
 
             {/* Commit Dialog Modal */}
             {commitDialogOpen && (
-                <div className="bg-surface border-b border-border-dim px-4 py-3 shrink-0 animate-fade-in z-20">
+                <div className="bg-surface border-b border-border-subtle px-4 py-3 shrink-0 animate-fade-in z-20">
                     <form onSubmit={handleCommit} className="flex items-center gap-3">
                         <GitCommit size={16} className="text-accent shrink-0" />
                         <input
@@ -586,7 +586,7 @@ export default function EditorPage() {
                             value={commitMessage}
                             onChange={e => setCommitMessage(e.target.value)}
                             placeholder="Commit message (e.g. 'Add palindrome logic')"
-                            className="flex-1 bg-black/[.03] dark:bg-white/5 border border-border-dim rounded-[10px] px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-accent"
+                            className="flex-1 bg-black/[.03] dark:bg-white/5 border border-border-subtle rounded-[10px] px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-accent"
                         />
                         <button
                             type="button"
@@ -612,9 +612,9 @@ export default function EditorPage() {
                 {explorerOpen && (
                     <aside
                         style={{ width: `${explorerWidth}px` }}
-                        className="border-r border-border-dim bg-surface flex flex-col shrink-0 relative overflow-hidden select-none"
+                        className="border-r border-border-subtle bg-surface flex flex-col shrink-0 relative overflow-hidden select-none"
                     >
-                        <div className="h-9 px-3 border-b border-border-dim flex items-center justify-between text-xs font-semibold text-text-sub uppercase tracking-wider">
+                        <div className="h-9 px-3 border-b border-border-subtle flex items-center justify-between text-xs font-semibold text-text-sub uppercase tracking-wider">
                             <span>Explorer</span>
                             <div className="flex items-center gap-1">
                                 <button
@@ -659,7 +659,7 @@ export default function EditorPage() {
                 {/* Editor & Terminal Panel Center */}
                 <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
                     {/* File Tabs Row with dirty dot */}
-                    <div className="h-9 bg-surface border-b border-border-dim flex items-center px-1 overflow-x-auto custom-scrollbar shrink-0">
+                    <div className="h-9 bg-surface border-b border-border-subtle flex items-center px-1 overflow-x-auto custom-scrollbar shrink-0">
                         {openTabs.map(tab => {
                             const isActive = tab.id === activeTabId;
                             const isDirty = dirtyTabs.has(tab.id);
@@ -670,7 +670,7 @@ export default function EditorPage() {
                                     onClick={() => setActiveTabId(tab.id)}
                                     className={`group flex items-center gap-2 h-7 px-3 text-xs rounded-[8px] cursor-pointer transition select-none mr-1 ${
                                         isActive
-                                            ? 'bg-canvas text-text-main font-medium border border-border-dim'
+                                            ? 'bg-canvas text-text-main font-medium border border-border-subtle'
                                             : 'text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6'
                                     }`}
                                 >
@@ -718,9 +718,9 @@ export default function EditorPage() {
                     {showOutput && (
                         <div
                             style={{ height: `${outputHeight}px` }}
-                            className="border-t border-border-dim bg-surface flex flex-col shrink-0 relative"
+                            className="border-t border-border-subtle bg-surface flex flex-col shrink-0 relative"
                         >
-                            <div className="h-8 px-3 border-b border-border-dim flex items-center justify-between text-xs text-text-sub select-none">
+                            <div className="h-8 px-3 border-b border-border-subtle flex items-center justify-between text-xs text-text-sub select-none">
                                 <div className="flex items-center gap-2 font-medium">
                                     <Terminal size={14} className="text-accent" />
                                     <span>Output</span>
@@ -784,7 +784,7 @@ export default function EditorPage() {
                     )}
 
                     {/* 24px Status Bar */}
-                    <footer className="h-6 shrink-0 bg-subtle border-t border-border-dim px-3 flex items-center justify-between text-[11px] text-text-dim select-none">
+                    <footer className="h-6 shrink-0 bg-subtle border-t border-border-subtle px-3 flex items-center justify-between text-[11px] text-text-dim select-none">
                         <div className="flex items-center gap-3">
                             <span className="font-medium text-text-sub uppercase">{currentLanguage}</span>
                             <span>UTF-8</span>
@@ -836,7 +836,7 @@ export default function EditorPage() {
                             value={newItemName}
                             onChange={e => setNewItemName(e.target.value)}
                             placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.java'}
-                            className="w-full h-10 px-3 rounded-[10px] bg-black/[.03] dark:bg-white/5 border border-border-dim text-xs text-text-main focus:outline-none focus:border-accent"
+                            className="w-full h-10 px-3 rounded-[10px] bg-black/[.03] dark:bg-white/5 border border-border-subtle text-xs text-text-main focus:outline-none focus:border-accent"
                         />
                         {createError && (
                             <p className="text-xs text-semantic-danger">{createError}</p>

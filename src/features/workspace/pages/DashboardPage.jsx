@@ -367,14 +367,14 @@ export default function DashboardPage() {
                     {latestRepoFiles.map((f) => (
                       <span
                         key={f.id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] bg-subtle border border-border-dim text-[11px] font-mono text-text-sub"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] bg-black/5 dark:bg-white/6 border border-border-subtle text-[11px] font-mono text-text-sub"
                       >
                         <FileCode size={12} className="text-accent" />
                         <span>{f.name}</span>
                       </span>
                     ))}
                     {latestRepoWorkspace && (
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-subtle border border-border-dim text-[11px] text-text-sub">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-black/5 dark:bg-white/6 border border-border-subtle text-[11px] text-text-sub">
                         <Building2 size={12} />
                         <span className="truncate">{latestRepoWorkspace.name}</span>
                       </div>
@@ -413,7 +413,7 @@ export default function DashboardPage() {
             </div>
 
             {latestRepo && (
-              <div className="mt-4 pt-3 border-t border-border-dim/60 flex items-center justify-between flex-wrap gap-3">
+              <div className="mt-4 pt-3 border-t border-border-subtle flex items-center justify-between flex-wrap gap-3">
                 <div className="text-xs text-text-sub">
                   Ready to resume your editor session
                 </div>
@@ -434,6 +434,60 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
+
+          {/* Quick Actions Row positioned in left column under hero card */}
+          <div className="mt-3 flex flex-wrap items-center gap-2.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Plus}
+              onClick={() => {
+                if (workspaces.length === 0) {
+                  setCreateOpen(true);
+                } else {
+                  setNewRepoWorkspaceId(workspaces[0].id);
+                  setNewRepoOpen(true);
+                }
+              }}
+            >
+              New repo
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={KeyRound}
+              onClick={() => setJoinOpen(true)}
+            >
+              Join with code
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={BookOpen}
+              onClick={() => {
+                if (workspaces.length > 0) {
+                  navigate(`/app/workspace/${workspaces[0].id}/classroom`);
+                } else {
+                  setCreateOpen(true);
+                }
+              }}
+            >
+              New assignment
+            </Button>
+
+            <div className="ml-auto">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Building2}
+                onClick={() => setCreateOpen(true)}
+              >
+                Create workspace
+              </Button>
+            </div>
+          </div>
         </div>
 
         {/* Side Tile (4 cols): Workspaces / Repositories / Members with Count-ups */}
@@ -446,7 +500,7 @@ export default function DashboardPage() {
               <div className="mt-4 space-y-3">
                 <CardRow className="p-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim/40">
+                    <div className="h-8 w-8 rounded-[8px] bg-black/5 dark:bg-white/6 flex items-center justify-center text-accent shrink-0">
                       <Building2 size={16} />
                     </div>
                     <span className="text-xs font-medium text-text-main">Workspaces</span>
@@ -458,7 +512,7 @@ export default function DashboardPage() {
 
                 <CardRow className="p-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim/40">
+                    <div className="h-8 w-8 rounded-[8px] bg-black/5 dark:bg-white/6 flex items-center justify-center text-accent shrink-0">
                       <FolderGit2 size={16} />
                     </div>
                     <span className="text-xs font-medium text-text-main">Repositories</span>
@@ -470,7 +524,7 @@ export default function DashboardPage() {
 
                 <CardRow className="p-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim/40">
+                    <div className="h-8 w-8 rounded-[8px] bg-black/5 dark:bg-white/6 flex items-center justify-center text-accent shrink-0">
                       <Users size={16} />
                     </div>
                     <span className="text-xs font-medium text-text-main">Members</span>
@@ -482,66 +536,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-border-dim/60 text-[11px] text-text-dim text-right">
+            <div className="mt-4 pt-3 border-t border-border-subtle text-[11px] text-text-dim text-right">
               Live workspace metrics
             </div>
           </Card>
         </div>
       </div>
 
-      {/* Quick Actions Row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={Plus}
-          onClick={() => {
-            if (workspaces.length === 0) {
-              setCreateOpen(true);
-            } else {
-              setNewRepoWorkspaceId(workspaces[0].id);
-              setNewRepoOpen(true);
-            }
-          }}
-        >
-          New repo
-        </Button>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={KeyRound}
-          onClick={() => setJoinOpen(true)}
-        >
-          Join with code
-        </Button>
-
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={BookOpen}
-          onClick={() => {
-            if (workspaces.length > 0) {
-              navigate(`/app/workspace/${workspaces[0].id}/classroom`);
-            } else {
-              setCreateOpen(true);
-            }
-          }}
-        >
-          New assignment
-        </Button>
-
-        <div className="ml-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Building2}
-            onClick={() => setCreateOpen(true)}
-          >
-            Create workspace
-          </Button>
-        </div>
-      </div>
 
       {/* Bottom Grid: Workspaces Rows & Activity Timeline */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -565,7 +566,7 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-2.5">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 rounded-2xl bg-subtle animate-pulse border border-border-dim" />
+                <div key={i} className="h-16 rounded-2xl bg-subtle animate-pulse border border-border-subtle" />
               ))}
             </div>
           ) : workspaces.length === 0 ? (
@@ -587,7 +588,7 @@ export default function DashboardPage() {
                   className="card-signature spotlight-card p-4 flex items-center justify-between gap-4 cursor-pointer hover:border-border-strong hover:-translate-y-[1px] transition-all duration-150"
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="h-10 w-10 rounded-[10px] bg-subtle border border-border-dim flex items-center justify-center text-accent shrink-0">
+                    <div className="h-10 w-10 rounded-[10px] bg-black/5 dark:bg-white/6 flex items-center justify-center text-accent shrink-0">
                       <Building2 size={18} />
                     </div>
                     <div className="min-w-0">
@@ -731,7 +732,7 @@ export default function DashboardPage() {
             <select
               value={newRepoWorkspaceId}
               onChange={(e) => setNewRepoWorkspaceId(e.target.value)}
-              className="w-full h-10 px-3 rounded-[10px] bg-subtle border border-border-dim text-xs text-text-main focus:outline-none focus:ring-2 focus:ring-accent"
+              className="w-full h-10 px-3 rounded-[10px] bg-subtle border border-border-subtle text-xs text-text-main focus:outline-none focus:ring-2 focus:ring-accent"
               required
             >
               {workspaces.map((ws) => (

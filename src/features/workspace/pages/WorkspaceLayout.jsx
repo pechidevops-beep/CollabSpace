@@ -40,7 +40,7 @@ export default function WorkspaceLayout() {
             <div className="space-y-4 py-4 animate-fade-up">
                 <Skeleton className="h-8 w-64 rounded-md" />
                 <Skeleton className="h-4 w-40 rounded-md" />
-                <div className="flex gap-4 border-b border-border-dim pt-4 pb-2">
+                <div className="flex gap-4 border-b border-border-subtle pt-4 pb-2">
                     <Skeleton className="h-6 w-24 rounded-md" />
                     <Skeleton className="h-6 w-24 rounded-md" />
                 </div>
@@ -77,7 +77,7 @@ export default function WorkspaceLayout() {
             </header>
 
             {/* Tab Navigation with strict 24px (mb-6) spacing below */}
-            <nav className="flex items-center gap-1 border-b border-border-dim mb-6" aria-label="Workspace tabs">
+            <nav className="flex items-center gap-1 border-b border-border-subtle mb-6" aria-label="Workspace tabs">
                 {tabs.map((tab) => (
                     <NavLink
                         key={tab.to}

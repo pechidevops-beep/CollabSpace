@@ -12,7 +12,7 @@ export default function WorkspaceCard({ workspace, onDelete, isDeleting }) {
             <Link to={`/app/workspace/${workspace.id}`} className="block h-full flex flex-col justify-between">
                 <div>
                     <div className="flex justify-between items-start mb-3.5">
-                        <div className="p-2.5 rounded-[10px] bg-subtle border border-border-dim text-accent">
+                        <div className="p-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 text-accent">
                             {isClassroom ? <GraduationCap size={18} /> : <Users size={18} />}
                         </div>
                         <div className="flex items-center gap-2">
@@ -45,7 +45,7 @@ export default function WorkspaceCard({ workspace, onDelete, isDeleting }) {
                     </p>
                 </div>
 
-                <div className="flex items-center justify-between pt-3 border-t border-border-dim text-[11px] text-text-dim font-medium">
+                <div className="flex items-center justify-between pt-3 border-t border-border-subtle text-[11px] text-text-dim font-medium">
                     <span>
                         Joined {new Date(workspace.created_at).toLocaleDateString()}
                     </span>

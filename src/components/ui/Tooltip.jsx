@@ -53,7 +53,7 @@ export function Tooltip({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.12, ease: 'easeOut' }}
-            className={`absolute z-50 pointer-events-none whitespace-nowrap px-2.5 py-1 text-[11px] font-medium text-text-main bg-elevated border border-border-dim rounded-[6px] shadow-card ${positionClasses[position] || positionClasses.top} ${className}`}
+            className={`absolute z-50 pointer-events-none whitespace-nowrap px-2.5 py-1 text-[11px] font-medium text-text-main bg-elevated border border-border-subtle rounded-[6px] shadow-card ${positionClasses[position] || positionClasses.top} ${className}`}
           >
             {content}
           </motion.div>

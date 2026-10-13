@@ -134,10 +134,10 @@ export function CommandPalette({ isOpen, onClose }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: -8 }}
             transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-            className="relative w-full max-w-xl rounded-lg bg-surface border border-border-dim shadow-elevated overflow-hidden z-10 text-text-main"
+            className="relative w-full max-w-xl rounded-lg bg-surface border border-border-subtle shadow-elevated overflow-hidden z-10 text-text-main"
           >
             {/* Search Input Bar */}
-            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border-dim bg-subtle/40">
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border-subtle bg-subtle/40">
               <Search size={16} className="text-text-dim shrink-0" />
               <input
                 ref={inputRef}
@@ -148,7 +148,7 @@ export function CommandPalette({ isOpen, onClose }) {
                 placeholder="Type a command or search..."
                 className="w-full bg-transparent text-sm text-text-main placeholder:text-text-dim outline-none"
               />
-              <kbd className="hidden sm:inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-mono text-text-dim bg-subtle border border-border-dim rounded">
+              <kbd className="hidden sm:inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-mono text-text-dim bg-black/5 dark:bg-white/8 rounded">
                 ESC
               </kbd>
             </div>
@@ -197,15 +197,15 @@ export function CommandPalette({ isOpen, onClose }) {
             </div>
 
             {/* Footer Help */}
-            <div className="flex items-center justify-between px-4 py-2 border-t border-border-dim bg-subtle/50 text-[11px] text-text-dim">
+            <div className="flex items-center justify-between px-4 py-2 border-t border-border-subtle bg-subtle/50 text-[11px] text-text-dim">
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1 py-0.5 rounded bg-surface border border-border-dim font-mono">↑</kbd>
-                  <kbd className="px-1 py-0.5 rounded bg-surface border border-border-dim font-mono">↓</kbd>
+                  <kbd className="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/8 text-text-main font-mono">↑</kbd>
+                  <kbd className="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/8 text-text-main font-mono">↓</kbd>
                   to navigate
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1 py-0.5 rounded bg-surface border border-border-dim font-mono">↵</kbd>
+                  <kbd className="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/8 text-text-main font-mono">↵</kbd>
                   to select
                 </span>
               </div>
@@ -259,14 +259,14 @@ export function CommandPaletteTrigger({ onClick, className = '' }) {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-between h-9 px-3 rounded-[10px] bg-subtle border border-border-dim text-text-sub hover:text-text-main hover:border-border-strong text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${className}`}
+      className={`inline-flex items-center justify-between h-9 px-3 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${className}`}
       aria-label="Open command palette"
     >
       <span className="flex items-center gap-2">
         <Search size={14} className="text-text-dim" />
         <span>Search or command...</span>
       </span>
-      <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-text-dim bg-surface border border-border-dim rounded">
+      <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-text-dim bg-black/5 dark:bg-white/8 rounded border-0">
         {isMac ? '⌘K' : 'Ctrl+K'}
       </kbd>
     </button>

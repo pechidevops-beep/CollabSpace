@@ -40,12 +40,12 @@ export default function DashboardStats({ workspaces = [], loading = false }) {
   ];
 
   return (
-    <Card className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 mb-8 divide-y sm:divide-y-0 sm:divide-x divide-border-dim/60">
+    <Card className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 mb-8 divide-y sm:divide-y-0 sm:divide-x divide-border-subtle">
       {items.map((stat) => {
         const Icon = stat.icon;
         return (
           <div key={stat.label} className="flex items-center gap-3.5 sm:px-4 first:sm:pl-1 last:sm:pr-1 pt-2 sm:pt-0 first:pt-0">
-            <div className="h-9 w-9 rounded-[10px] bg-subtle border border-border-dim flex items-center justify-center text-accent shrink-0">
+            <div className="h-9 w-9 rounded-[10px] bg-black/5 dark:bg-white/6 flex items-center justify-center text-accent shrink-0">
               <Icon size={16} />
             </div>
             <div>

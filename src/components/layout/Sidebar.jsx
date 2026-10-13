@@ -76,7 +76,7 @@ export default function Sidebar({ onOpenCmd }) {
     <aside
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`hidden md:flex flex-col justify-between border-r border-border-dim bg-surface/95 backdrop-blur-xl z-30 transition-[width] duration-200 ease-out select-none relative
+      className={`hidden md:flex flex-col justify-between border-r border-border-subtle bg-surface/95 backdrop-blur-xl z-30 transition-[width] duration-200 ease-out select-none relative
         ${isExpanded ? 'w-[240px]' : 'w-[72px]'}`}
     >
       <div className="flex flex-col h-full justify-between p-3.5">
@@ -119,7 +119,7 @@ export default function Sidebar({ onOpenCmd }) {
                 isExpanded ? (
                   <button
                     type="button"
-                    className="w-full flex items-center justify-between h-10 px-2.5 rounded-[10px] border border-border-dim bg-subtle hover:bg-elevated hover:border-border-strong text-xs text-text-main transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                    className="w-full flex items-center justify-between h-10 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-xs text-text-main transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label="Switch workspace"
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -194,7 +194,7 @@ export default function Sidebar({ onOpenCmd }) {
         </div>
 
         {/* User Footer Profile */}
-        <div className={`border-t border-border-dim pt-3 flex ${isExpanded ? 'w-full' : 'justify-center'}`}>
+        <div className={`border-t border-border-subtle pt-3 flex ${isExpanded ? 'w-full' : 'justify-center'}`}>
           <DropdownMenu
             align="left"
             className="w-56"
@@ -205,7 +205,7 @@ export default function Sidebar({ onOpenCmd }) {
                   className="w-full flex items-center gap-2.5 rounded-[10px] p-1.5 hover:bg-subtle transition-colors text-left"
                   aria-label="User account menu"
                 >
-                  <div className="h-8 w-8 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-semibold border border-accent/20 shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-black/5 dark:bg-white/6 text-text-main flex items-center justify-center text-xs font-semibold shrink-0">
                     {initials}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -224,7 +224,7 @@ export default function Sidebar({ onOpenCmd }) {
                     className="w-11 h-11 flex items-center justify-center rounded-[10px] hover:bg-subtle transition-colors"
                     aria-label="User account menu"
                   >
-                    <div className="h-8 w-8 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-semibold border border-accent/20 shrink-0">
+                    <div className="h-8 w-8 rounded-full bg-black/5 dark:bg-white/6 text-text-main flex items-center justify-center text-xs font-semibold shrink-0">
                       {initials}
                     </div>
                   </button>
@@ -232,7 +232,7 @@ export default function Sidebar({ onOpenCmd }) {
               )
             }
           >
-            <div className="px-3 py-2 border-b border-border-dim">
+            <div className="px-3 py-2 border-b border-border-subtle">
               <div className="text-xs font-semibold text-text-main truncate">{displayName}</div>
               <div className="text-[11px] text-text-dim truncate">{user?.email}</div>
             </div>

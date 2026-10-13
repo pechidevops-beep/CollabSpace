@@ -10,7 +10,7 @@ export function Skeleton({ className = '', variant = 'rect', ...props }) {
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse bg-subtle border border-border-dim/40 ${variantStyles[variant] || variantStyles.rect} ${className}`}
+      className={`animate-pulse bg-subtle border border-border-subtle ${variantStyles[variant] || variantStyles.rect} ${className}`}
       {...props}
     />
   );

@@ -117,10 +117,10 @@ export function Sheet({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? 'sheet-title' : undefined}
-            className={`fixed ${sidePlacement[side] || sidePlacement.right} w-full ${width} bg-surface border-border-dim shadow-elevated flex flex-col z-10 ${className}`}
+            className={`fixed ${sidePlacement[side] || sidePlacement.right} w-full ${width} bg-surface border-border-subtle shadow-elevated flex flex-col z-10 ${className}`}
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-border-dim">
+            <div className="flex items-center justify-between p-6 border-b border-border-subtle">
               <div>
                 {title && (
                   <h3 id="sheet-title" className="text-base font-semibold text-text-main tracking-tight">

@@ -23,8 +23,9 @@ module.exports = {
         'text-sub': 'rgb(var(--color-text-sub) / <alpha-value>)',
         'text-dim': 'rgb(var(--color-text-dim) / <alpha-value>)',
 
-        'border-dim': 'rgba(var(--color-border), var(--border-opacity, 0.08))',
-        'border-strong': 'rgba(var(--color-border), 0.16)',
+        'border-subtle': 'var(--border-subtle)',
+        'border-dim': 'var(--border-subtle)',
+        'border-strong': 'rgba(var(--color-border), 0.12)',
 
         semantic: {
           success: 'rgb(var(--color-success) / <alpha-value>)',
@@ -79,7 +80,8 @@ module.exports = {
         },
       },
       borderColor: {
-        DEFAULT: 'rgba(var(--color-border), var(--border-opacity, 0.08))',
+        DEFAULT: 'var(--border-subtle)',
+        subtle: 'var(--border-subtle)',
       },
       borderRadius: {
         control: '10px',
