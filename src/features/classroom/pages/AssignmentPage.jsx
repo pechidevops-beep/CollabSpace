@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import PageTransition from '../../../components/shared/PageTransition';
+import Button from '../../../components/ui/Button';
+import Skeleton from '../../../components/ui/Skeleton';
+import EmptyState from '../../../components/ui/EmptyState';
 import {
     getAssignmentById,
     getSubmissionsWithProfiles,
@@ -13,14 +16,14 @@ import {
 import { usePermissions } from '../../../hooks/usePermissions';
 import {
     ArrowLeft, Calendar, Send, Star, MessageSquare,
-    CheckCircle2, Clock, AlertCircle, RotateCcw, Eye,
+    CheckCircle2, Clock, AlertCircle, RotateCcw,
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
-    pending: { label: 'Pending', color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20' },
-    submitted: { label: 'Submitted', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-    reviewed: { label: 'Reviewed', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-    returned: { label: 'Returned', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+    pending: { label: 'Pending', color: 'text-text-dim', bg: 'bg-subtle', border: 'border-border-dim' },
+    submitted: { label: 'Submitted', color: 'text-accent', bg: 'bg-accent/10', border: 'border-accent/20' },
+    reviewed: { label: 'Reviewed', color: 'text-semantic-success', bg: 'bg-semantic-success/10', border: 'border-semantic-success/20' },
+    returned: { label: 'Returned', color: 'text-semantic-warning', bg: 'bg-semantic-warning/10', border: 'border-semantic-warning/20' },
 };
 
 function StatusBadge({ status }) {
@@ -129,18 +132,17 @@ export default function AssignmentPage() {
 
     if (loading) {
         return (
-            <div className="flex h-[60vh] items-center justify-center text-sm text-slate-500">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                    Loading assignment…
-                </div>
+            <div className="max-w-4xl mx-auto space-y-4 py-4 animate-fade-up">
+                <Skeleton className="h-6 w-36 rounded-md" />
+                <Skeleton className="h-44 w-full rounded-[14px]" />
+                <Skeleton className="h-32 w-full rounded-[14px]" />
             </div>
         );
     }
 
     if (!assignment) {
         return (
-            <div className="flex h-[60vh] items-center justify-center text-sm text-slate-500">
+            <div className="flex h-[60vh] items-center justify-center text-xs text-text-sub">
                 Assignment not found.
             </div>
         );
@@ -150,77 +152,79 @@ export default function AssignmentPage() {
     const gradedCount = submissions.filter(s => s.grade != null).length;
     const avgGrade = gradedCount > 0
         ? (submissions.filter(s => s.grade != null).reduce((acc, s) => acc + Number(s.grade), 0) / gradedCount).toFixed(1)
-        : '—';
+        : 'N/A';
 
     return (
         <PageTransition>
-            <div className="max-w-4xl mx-auto space-y-6 pb-8">
+            <div className="max-w-4xl mx-auto space-y-6 pb-8 animate-fade-up">
                 <Link
                     to={`/app/workspace/${workspaceId}/assessments`}
-                    className="inline-flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                    className="inline-flex items-center gap-2 text-xs text-text-sub hover:text-text-main transition-colors"
                 >
                     <ArrowLeft size={14} /> Back to Assessments
                 </Link>
 
                 {error && (
-                    <div className="glass-panel text-rose-400 text-xs rounded-lg p-3">{error}</div>
+                    <div className="p-3.5 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger text-xs">
+                        {error}
+                    </div>
                 )}
 
                 {/* Assignment details */}
-                <div className="glass-panel p-6 rounded-xl">
+                <div className="p-6 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
                     <div className="flex items-start justify-between mb-4">
                         <div>
-                            <h1 className="text-xl font-bold text-white">{assignment.title}</h1>
-                            <span className="text-[10px] text-slate-500 mt-1">Max points: {maxPts}</span>
+                            <h1 className="text-xl font-semibold text-text-main tracking-tight">{assignment.title}</h1>
+                            <span className="text-[11px] text-text-dim mt-1 inline-block">Max points: {maxPts}</span>
                         </div>
                         {isPastDue ? (
-                            <div className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                                <AlertCircle size={10} /> Past Due
+                            <div className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-semantic-danger/10 text-semantic-danger border border-semantic-danger/20 font-medium">
+                                <AlertCircle size={11} /> Past Due
                             </div>
                         ) : (
-                            <div className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <Clock size={10} /> Active
+                            <div className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-semantic-success/10 text-semantic-success border border-semantic-success/20 font-medium">
+                                <Clock size={11} /> Active
                             </div>
                         )}
                     </div>
                     {assignment.description && (
-                        <p className="text-sm text-slate-300 mb-4 whitespace-pre-wrap">{assignment.description}</p>
+                        <p className="text-xs text-text-sub mb-4 whitespace-pre-wrap leading-relaxed">{assignment.description}</p>
                     )}
                     {assignment.due_date && (
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <Calendar size={14} />
+                        <div className="flex items-center gap-2 text-xs text-text-dim">
+                            <Calendar size={13} />
                             Due: {new Date(assignment.due_date).toLocaleString()}
                         </div>
                     )}
                 </div>
 
-                {/* ─── Student View ─── */}
+                {/* Student View */}
                 {!canGradeSubmissions && (
                     <div className="space-y-4">
                         {mySubmission ? (
-                            <div className="glass-panel p-5 rounded-xl space-y-3">
+                            <div className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <CheckCircle2 size={16} className="text-emerald-400" />
-                                    <span className="text-sm font-medium text-white">Submitted</span>
+                                    <CheckCircle2 size={16} className="text-semantic-success" />
+                                    <span className="text-xs font-semibold text-text-main">Submitted</span>
                                     <StatusBadge status={mySubmission.status || 'submitted'} />
                                 </div>
-                                <p className="text-xs text-slate-400">
+                                <p className="text-xs text-text-dim">
                                     Submitted on {new Date(mySubmission.submitted_at).toLocaleString()}
                                 </p>
                                 {mySubmission.grade !== null && mySubmission.grade !== undefined && (
-                                    <div className="mt-2 p-3 bg-slate-900/80 rounded-lg border border-slate-800">
+                                    <div className="mt-2 p-3.5 bg-subtle rounded-[10px] border border-border-dim">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <Star size={14} className="text-amber-400" />
-                                            <span className="text-sm font-semibold text-white">Grade: {mySubmission.grade}/{maxPts}</span>
+                                            <Star size={14} className="text-amber-500" />
+                                            <span className="text-xs font-semibold text-text-main">Grade: {mySubmission.grade}/{maxPts}</span>
                                         </div>
                                         {mySubmission.feedback && (
-                                            <p className="text-xs text-slate-300 mt-2">{mySubmission.feedback}</p>
+                                            <p className="text-xs text-text-sub mt-2 leading-relaxed">{mySubmission.feedback}</p>
                                         )}
                                     </div>
                                 )}
                                 {mySubmission.status === 'returned' && (
-                                    <div className="p-2.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
-                                        <RotateCcw size={11} className="inline mr-1" /> Your submission was returned for revision. Please resubmit.
+                                    <div className="p-3 rounded-[10px] bg-semantic-warning/10 border border-semantic-warning/20 text-xs text-semantic-warning">
+                                        <RotateCcw size={12} className="inline mr-1" /> Your submission was returned for revision. Please resubmit.
                                     </div>
                                 )}
                                 {(!isPastDue || mySubmission.status === 'returned') && (
@@ -229,83 +233,87 @@ export default function AssignmentPage() {
                                             value={repoLink}
                                             onChange={e => setRepoLink(e.target.value)}
                                             placeholder="Update: paste repo ID or link"
-                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-brand-500"
+                                            className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                         />
-                                        <button type="submit" disabled={submitting || !repoLink.trim()} className="btn btn-secondary text-xs">
-                                            <Send size={14} /> Re-submit
-                                        </button>
+                                        <Button type="submit" variant="secondary" size="sm" icon={Send} disabled={submitting || !repoLink.trim()}>
+                                            Re-submit
+                                        </Button>
                                     </form>
                                 )}
                             </div>
                         ) : (
-                            <form onSubmit={handleSubmit} className="glass-panel p-5 rounded-xl space-y-3">
-                                <h3 className="text-sm font-semibold text-white">Submit Your Work</h3>
-                                <p className="text-xs text-slate-400">Paste a repository ID or link below.</p>
+                            <form onSubmit={handleSubmit} className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-3">
+                                <h3 className="text-sm font-semibold text-text-main">Submit Your Work</h3>
+                                <p className="text-xs text-text-sub">Paste a repository ID or link below.</p>
                                 <div className="flex items-center gap-2">
                                     <input
                                         value={repoLink}
                                         onChange={e => setRepoLink(e.target.value)}
                                         placeholder="Repository ID or link"
-                                        className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-brand-500"
+                                        className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                         disabled={isPastDue}
                                     />
-                                    <button
+                                    <Button
                                         type="submit"
+                                        variant="primary"
+                                        size="sm"
+                                        icon={Send}
+                                        loading={submitting}
                                         disabled={submitting || !repoLink.trim() || isPastDue}
-                                        className="btn btn-primary text-xs"
                                     >
-                                        <Send size={14} /> {submitting ? 'Submitting…' : 'Submit'}
-                                    </button>
+                                        {submitting ? 'Submitting…' : 'Submit'}
+                                    </Button>
                                 </div>
                                 {isPastDue && (
-                                    <p className="text-[11px] text-rose-400">This assignment is past due and can no longer be submitted.</p>
+                                    <p className="text-[11px] text-semantic-danger font-medium">This assignment is past due and can no longer be submitted.</p>
                                 )}
                             </form>
                         )}
                     </div>
                 )}
 
-                {/* ─── Teacher/Grader View ─── */}
+                {/* Teacher/Grader View */}
                 {canGradeSubmissions && (
                     <div className="space-y-4">
                         {/* Stats bar */}
                         <div className="grid grid-cols-3 gap-3">
-                            <div className="glass-panel p-3 rounded-lg text-center">
-                                <p className="text-lg font-bold text-white">{submissions.length}</p>
-                                <p className="text-[10px] text-slate-500">Submissions</p>
+                            <div className="p-3.5 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                                <p className="text-xl font-bold text-text-main tracking-tight">{submissions.length}</p>
+                                <p className="text-[11px] text-text-dim mt-0.5">Submissions</p>
                             </div>
-                            <div className="glass-panel p-3 rounded-lg text-center">
-                                <p className="text-lg font-bold text-emerald-400">{gradedCount}</p>
-                                <p className="text-[10px] text-slate-500">Graded</p>
+                            <div className="p-3.5 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                                <p className="text-xl font-bold text-semantic-success tracking-tight">{gradedCount}</p>
+                                <p className="text-[11px] text-text-dim mt-0.5">Graded</p>
                             </div>
-                            <div className="glass-panel p-3 rounded-lg text-center">
-                                <p className="text-lg font-bold text-amber-400">{avgGrade}</p>
-                                <p className="text-[10px] text-slate-500">Avg Grade</p>
+                            <div className="p-3.5 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                                <p className="text-xl font-bold text-accent tracking-tight">{avgGrade}</p>
+                                <p className="text-[11px] text-text-dim mt-0.5">Avg Grade</p>
                             </div>
                         </div>
 
-                        <h2 className="text-sm font-semibold text-slate-200">
+                        <h2 className="text-sm font-semibold text-text-main">
                             Submissions ({submissions.length})
                         </h2>
                         {submissions.length === 0 ? (
-                            <div className="glass-panel p-6 rounded-xl text-center text-sm text-slate-500">
-                                No submissions yet.
-                            </div>
+                            <EmptyState
+                                title="No submissions yet"
+                                description="Students have not submitted their work for this assignment yet."
+                            />
                         ) : (
                             <div className="space-y-3">
                                 {submissions.map(s => (
-                                    <div key={s.id} className="glass-panel p-4 rounded-xl">
+                                    <div key={s.id} className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-600/30 to-purple-600/30 flex items-center justify-center text-[10px] font-semibold text-white border border-white/10">
+                                                <div className="w-8 h-8 rounded-full bg-subtle border border-border-dim flex items-center justify-center text-[11px] font-semibold text-text-main">
                                                     {(s.student_name || '?')[0].toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-medium text-white">
+                                                    <p className="text-xs font-medium text-text-main">
                                                         {s.student_name || s.student_id}
                                                     </p>
                                                     <div className="flex items-center gap-2">
-                                                        <p className="text-[10px] text-slate-500">
+                                                        <p className="text-[11px] text-text-dim">
                                                             {new Date(s.submitted_at).toLocaleString()}
                                                         </p>
                                                         <StatusBadge status={s.status || 'submitted'} />
@@ -314,69 +322,76 @@ export default function AssignmentPage() {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {s.grade !== null && s.grade !== undefined ? (
-                                                    <div className="flex items-center gap-1 text-xs text-emerald-400 font-semibold">
-                                                        <Star size={12} />
+                                                    <div className="flex items-center gap-1 text-xs text-semantic-success font-semibold">
+                                                        <Star size={13} />
                                                         {s.grade}/{maxPts}
                                                     </div>
                                                 ) : (
-                                                    <button
+                                                    <Button
+                                                        variant="secondary"
+                                                        size="sm"
                                                         onClick={() => { setGradingId(gradingId === s.id ? null : s.id); setGradeVal(''); setFeedbackVal(''); }}
-                                                        className="btn btn-secondary text-[11px]"
                                                     >
                                                         Grade
-                                                    </button>
+                                                    </Button>
                                                 )}
                                                 {s.status !== 'returned' && s.grade == null && (
                                                     <button
+                                                        type="button"
                                                         onClick={() => handleReturn(s.id)}
-                                                        className="btn btn-ghost text-[11px] text-amber-400 hover:bg-amber-500/10"
+                                                        className="p-1.5 rounded-md text-semantic-warning hover:bg-semantic-warning/10 transition-colors"
                                                         title="Return for revision"
                                                     >
-                                                        <RotateCcw size={12} />
+                                                        <RotateCcw size={13} />
                                                     </button>
                                                 )}
                                             </div>
                                         </div>
                                         {s.repository_id && (
-                                            <p className="text-[11px] text-slate-400 mb-2">Repo: {s.repository_id}</p>
+                                            <p className="text-[11px] text-text-dim mb-2 font-mono">Repo: {s.repository_id}</p>
                                         )}
                                         {s.feedback && (
-                                            <p className="text-xs text-slate-300 bg-slate-900/60 p-2 rounded mt-1">{s.feedback}</p>
+                                            <p className="text-xs text-text-sub bg-subtle p-2.5 rounded-md mt-1 leading-relaxed">{s.feedback}</p>
                                         )}
                                         {gradingId === s.id && (
-                                            <div className="mt-3 p-3 bg-slate-900/80 rounded-lg border border-slate-700 space-y-2 animate-fade-in">
+                                            <div className="mt-3 p-3.5 bg-subtle rounded-[10px] border border-border-dim space-y-2.5 animate-fade-in">
                                                 <div className="flex items-center gap-2">
-                                                    <label className="text-[11px] text-slate-300 w-16">Grade</label>
+                                                    <label className="text-xs text-text-main w-16">Grade</label>
                                                     <input
                                                         type="number"
                                                         min={0}
                                                         max={maxPts}
                                                         value={gradeVal}
                                                         onChange={e => setGradeVal(e.target.value)}
-                                                        className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-brand-500"
+                                                        className="w-24 bg-surface border border-border-dim rounded-md px-2 py-1 text-xs text-text-main outline-none focus:border-brand"
                                                         placeholder={`0-${maxPts}`}
                                                     />
-                                                    <span className="text-[10px] text-slate-500">/ {maxPts}</span>
+                                                    <span className="text-[11px] text-text-dim">/ {maxPts}</span>
                                                 </div>
                                                 <div className="flex items-start gap-2">
-                                                    <label className="text-[11px] text-slate-300 w-16 pt-1">Feedback</label>
+                                                    <label className="text-xs text-text-main w-16 pt-1">Feedback</label>
                                                     <textarea
                                                         value={feedbackVal}
                                                         onChange={e => setFeedbackVal(e.target.value)}
                                                         rows={2}
-                                                        className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-brand-500 resize-none"
+                                                        className="flex-1 bg-surface border border-border-dim rounded-md px-2 py-1.5 text-xs text-text-main outline-none focus:border-brand resize-none"
                                                         placeholder="Optional feedback…"
                                                     />
                                                 </div>
-                                                <div className="flex gap-2 justify-end">
-                                                    <button onClick={() => setGradingId(null)} className="btn btn-ghost text-[11px]">Cancel</button>
-                                                    <button
+                                                <div className="flex gap-2 justify-end pt-1">
+                                                    <Button variant="ghost" size="sm" onClick={() => setGradingId(null)}>
+                                                        Cancel
+                                                    </Button>
+                                                    <Button
+                                                        variant="primary"
+                                                        size="sm"
+                                                        icon={MessageSquare}
                                                         onClick={() => handleGrade(s.id)}
+                                                        loading={grading}
                                                         disabled={grading || !gradeVal}
-                                                        className="btn btn-primary text-[11px]"
                                                     >
-                                                        <MessageSquare size={12} /> {grading ? 'Saving…' : 'Save Grade'}
-                                                    </button>
+                                                        {grading ? 'Saving…' : 'Save Grade'}
+                                                    </Button>
                                                 </div>
                                             </div>
                                         )}

@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import PageTransition from '../../../components/shared/PageTransition';
 import { useAuth } from '../../../context/AuthContext';
+import Button from '../../../components/ui/Button';
+import Input from '../../../components/ui/Input';
+import { ThemeToggle } from '../../../components/ui/ThemeToggle';
+import { useTheme } from '../../../context/ThemeContext';
+import { Check, User, Shield, Moon } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user, profile, updateProfile } = useAuth();
+  const { accent, setAccent } = useTheme();
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
@@ -22,62 +28,118 @@ export default function SettingsPage() {
       await updateProfile({
         full_name: fullName.trim() || null,
       });
-      setStatus('Profile updated.');
+      setStatus('Profile updated successfully.');
+      setTimeout(() => setStatus(''), 3000);
     } catch (err) {
       setError(err?.message || 'Failed to update profile.');
     }
     setSaving(false);
   };
 
+  const palettes = [
+    { id: 'theme-blue', name: 'Graphite + Blue', color: '#0A84FF' },
+    { id: 'theme-mint', name: 'Graphite + Mint', color: '#3DDC97' },
+    { id: 'theme-amber', name: 'Graphite + Amber', color: '#FF9F0A' },
+  ];
+
   return (
     <PageTransition>
-      <div className="max-w-3xl space-y-6 pb-8">
+      <div className="max-w-3xl space-y-6 pb-8 animate-fade-up">
         <header>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Settings</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage your profile and account info.</p>
+          <h1 className="text-xl sm:text-2xl font-semibold text-text-main tracking-tight">Settings</h1>
+          <p className="text-xs text-text-sub mt-1">Manage your profile, theme, and workspace preferences.</p>
         </header>
 
-        <section className="glass-panel p-6 rounded-xl space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-200">Profile</h2>
-            <p className="text-xs text-slate-500 mt-1">Update your display name.</p>
+        {/* Profile Section */}
+        <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4">
+          <div className="flex items-center gap-2">
+            <User size={16} className="text-accent" />
+            <h2 className="text-sm font-semibold text-text-main">Profile Information</h2>
           </div>
 
-          <form onSubmit={handleSave} className="space-y-3">
-            <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Full name</label>
-              <input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500"
-                placeholder="Your name"
-              />
-            </div>
+          <form onSubmit={handleSave} className="space-y-4">
+            <Input
+              label="Full Name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Your full name"
+            />
 
-            <div className="flex items-center gap-3">
-              <button
+            <div className="flex items-center gap-3 pt-1">
+              <Button
                 type="submit"
+                variant="primary"
+                size="sm"
+                loading={saving}
                 disabled={saving}
-                className="btn btn-primary text-xs"
               >
-                {saving ? 'Saving...' : 'Save changes'}
-              </button>
-              {status && <span className="text-xs text-emerald-400">{status}</span>}
-              {error && <span className="text-xs text-rose-400">{error}</span>}
+                Save Changes
+              </Button>
+              {status && <span className="text-xs text-semantic-success font-medium animate-fadeIn">{status}</span>}
+              {error && <span className="text-xs text-semantic-danger font-medium animate-fadeIn">{error}</span>}
             </div>
           </form>
         </section>
 
-        <section className="glass-panel p-6 rounded-xl space-y-2">
-          <h2 className="text-sm font-semibold text-slate-200">Account</h2>
-          <div className="text-xs text-slate-400">
-            <div className="flex items-center justify-between border-b border-slate-800 py-2">
-              <span>Email</span>
-              <span className="text-slate-200">{user?.email || 'Unavailable'}</span>
+        {/* Theme & Appearance Section */}
+        <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Moon size={16} className="text-accent" />
+              <div>
+                <h2 className="text-sm font-semibold text-text-main">Theme Mode</h2>
+                <p className="text-xs text-text-sub mt-0.5">Toggle between Dark and Light mode.</p>
+              </div>
             </div>
-            <div className="flex items-center justify-between py-2">
-              <span>User ID</span>
-              <span className="text-slate-200">{user?.id || 'Unavailable'}</span>
+            <ThemeToggle />
+          </div>
+
+          <div className="pt-3 border-t border-border-dim">
+            <h3 className="text-xs font-medium text-text-main mb-2">Accent Palette</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {palettes.map((p) => {
+                const isSelected = accent === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setAccent(p.id)}
+                    className={`flex items-center justify-between p-3 rounded-[10px] border transition-all text-left ${
+                      isSelected
+                        ? 'border-accent bg-subtle text-text-main font-medium shadow-sm'
+                        : 'border-border-dim bg-surface hover:bg-subtle text-text-sub hover:text-text-main'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className="w-3.5 h-3.5 rounded-full border border-black/20 shrink-0"
+                        style={{ backgroundColor: p.color }}
+                      />
+                      <span className="text-xs">{p.name}</span>
+                    </div>
+                    {isSelected && <Check size={14} className="text-accent" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* Account Details Section */}
+        <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-3">
+          <div className="flex items-center gap-2">
+            <Shield size={16} className="text-accent" />
+            <h2 className="text-sm font-semibold text-text-main">Account Details</h2>
+          </div>
+
+          <div className="text-xs divide-y divide-border-dim">
+            <div className="flex items-center justify-between py-2.5">
+              <span className="text-text-sub">Email</span>
+              <span className="text-text-main font-mono">{user?.email || 'Unavailable'}</span>
+            </div>
+            <div className="flex items-center justify-between py-2.5">
+              <span className="text-text-sub">User ID</span>
+              <span className="text-text-dim font-mono text-[11px]">{user?.id || 'Unavailable'}</span>
             </div>
           </div>
         </section>
