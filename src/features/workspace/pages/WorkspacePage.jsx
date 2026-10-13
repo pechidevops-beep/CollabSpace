@@ -391,9 +391,9 @@ export default function WorkspacePage() {
                             const canRemove = canManage && !isMemberOwner && !isSelf;
 
                             const roleBadgeClass = {
-                                owner: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
-                                admin: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
-                                contributor: 'text-accent bg-accent/10 border-accent/20',
+                                owner: 'text-semantic-warning bg-semantic-warning/10 border-semantic-warning/20',
+                                admin: 'text-accent bg-accent/10 border-accent/20',
+                                contributor: 'text-text-main bg-subtle border-border-dim',
                                 viewer: 'text-text-dim bg-subtle border-border-dim',
                             }[m.role] || 'text-text-dim bg-subtle border-border-dim';
 
