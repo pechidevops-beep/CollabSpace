@@ -81,12 +81,6 @@ const bentoFeatures = [
     description:
       'Assign Owner or Contributor roles, generate secure invite codes, and manage collaborator rosters easily.',
   },
-  {
-    icon: Sparkles,
-    title: 'Obsidian & Mint Design System',
-    description:
-      'Curated typography, micro-interactions, and high-contrast dark and light modes built to WCAG AAA standards.',
-  },
 ];
 
 export default function LandingPage() {
@@ -122,12 +116,12 @@ export default function LandingPage() {
             );
           }
 
-          // Pinned scroll chapters
-          if (pinnedSectionRef.current) {
+          // Pinned scroll chapters (only on desktop to avoid blank scroll traps on mobile)
+          if (pinnedSectionRef.current && window.innerWidth >= 768) {
             ScrollTrigger.create({
               trigger: pinnedSectionRef.current,
               start: 'top top',
-              end: '+=1500',
+              end: '+=900',
               pin: true,
               scrub: 0.5,
               onUpdate: (self) => {
@@ -257,15 +251,15 @@ export default function LandingPage() {
                 <span className="w-2.5 h-2.5 rounded-full bg-semantic-success/60" />
               </div>
               <div className="text-[11px] text-text-dim font-mono">
-                collabspace.app/workspace/overview
+                collabspace.app/workspace/editor/main.py
               </div>
               <div className="w-12" />
             </div>
 
             <div className="rounded-[10px] overflow-hidden bg-canvas aspect-[16/9] border border-border-dim">
               <img
-                src="/screens/repositories.png"
-                alt="CollabSpace Workspace Overview"
+                src="/screens/editor.png"
+                alt="CollabSpace Code Editor and Workspace"
                 className="w-full h-full object-cover object-top"
                 loading="eager"
               />
@@ -360,13 +354,15 @@ export default function LandingPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {bentoFeatures.map((feat) => {
+          {bentoFeatures.map((feat, idx) => {
             const Icon = feat.icon;
             return (
               <Card
                 key={feat.title}
                 spotlight={true}
-                className="p-6 flex flex-col justify-between"
+                className={`p-6 flex flex-col justify-between ${
+                  idx === 0 ? 'lg:col-span-2' : 'lg:col-span-1'
+                }`}
               >
                 <div>
                   <div className="h-10 w-10 rounded-[10px] bg-subtle border border-border-dim flex items-center justify-center text-accent mb-4">
@@ -378,11 +374,6 @@ export default function LandingPage() {
                   <p className="mt-2 text-xs text-text-sub leading-relaxed">
                     {feat.description}
                   </p>
-                </div>
-
-                <div className="mt-6 pt-3 border-t border-border-dim/60 flex items-center gap-1.5 text-[11px] text-accent font-medium">
-                  <CheckCircle2 size={13} />
-                  <span>Integrated feature</span>
                 </div>
               </Card>
             );

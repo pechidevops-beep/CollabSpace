@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Check, CheckCheck, Trash2, ExternalLink } from 'lucide-react';
+import { Bell, Check, CheckCheck, Trash2, ExternalLink, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
     getNotifications,
@@ -140,7 +140,7 @@ export default function NotificationBell() {
                     <div className="max-h-[360px] overflow-y-auto custom-scrollbar">
                         {loading ? (
                             <div className="flex items-center justify-center py-8 text-xs text-text-dim">
-                                <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin mr-2" />
+                                <Loader2 size={16} className="animate-spin text-accent mr-2" />
                                 Loading…
                             </div>
                         ) : notifications.length === 0 ? (

@@ -48,10 +48,10 @@ export const Input = forwardRef(function Input(
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : helperText ? helperId : undefined}
           required={required}
-          className={`w-full h-9 rounded-md bg-subtle border text-text-main text-xs px-3 transition-colors
+          className={`w-full h-10 rounded-[10px] bg-black/[.03] dark:bg-white/5 border text-text-main text-xs px-3 transition-colors
             placeholder:text-text-dim
             hover:border-border-strong
-            focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20
+            focus:bg-surface focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20
             disabled:opacity-50 disabled:cursor-not-allowed
             ${Icon ? 'pl-9' : ''}
             ${rightElement ? 'pr-9' : ''}
@@ -119,10 +119,10 @@ export const Textarea = forwardRef(function Textarea(
         aria-invalid={Boolean(error)}
         aria-describedby={error ? errorId : helperText ? helperId : undefined}
         required={required}
-        className={`w-full rounded-md bg-subtle border text-text-main text-xs p-3 transition-colors resize-y
+        className={`w-full rounded-[10px] bg-black/[.03] dark:bg-white/5 border text-text-main text-xs p-3 transition-colors resize-y
           placeholder:text-text-dim
           hover:border-border-strong
-          focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20
+          focus:bg-surface focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20
           disabled:opacity-50 disabled:cursor-not-allowed
           ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-dim'}
           ${textareaClassName}`}
@@ -159,31 +159,48 @@ export const Select = forwardRef(function Select(
   const generatedId = useId();
   const id = customId || generatedId;
   const errorId = `${id}-error`;
+  const helperId = `${id}-helper`;
 
   return (
     <div className={`flex flex-col gap-1.5 w-full ${className}`}>
       {label && (
-        <label htmlFor={id} className="text-xs font-medium text-text-main">
-          {label}
-          {required && <span className="text-semantic-danger ml-0.5">*</span>}
+        <label
+          htmlFor={id}
+          className="text-xs font-medium text-text-main flex items-center justify-between"
+        >
+          <span>
+            {label}
+            {required && <span className="text-semantic-danger ml-0.5">*</span>}
+          </span>
         </label>
       )}
+
       <select
         ref={ref}
         id={id}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : helperText ? helperId : undefined}
         required={required}
-        className={`w-full h-9 rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors
-          hover:border-border-strong focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20
-          disabled:opacity-50 disabled:cursor-not-allowed ${selectClassName}`}
+        className={`w-full h-10 rounded-[10px] bg-black/[.03] dark:bg-white/5 border text-text-main text-xs px-3 transition-colors
+          hover:border-border-strong
+          focus:bg-surface focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20
+          disabled:opacity-50 disabled:cursor-not-allowed
+          ${error ? 'border-semantic-danger focus:border-semantic-danger focus:ring-semantic-danger/20' : 'border-border-dim'}
+          ${selectClassName}`}
         {...props}
       >
         {children}
       </select>
-      {error && (
-        <p id={errorId} className="text-[11px] text-semantic-danger font-medium">
+
+      {error ? (
+        <p id={errorId} className="text-[11px] text-semantic-danger font-medium animate-fadeIn">
           {error}
         </p>
-      )}
+      ) : helperText ? (
+        <p id={helperId} className="text-[11px] text-text-dim">
+          {helperText}
+        </p>
+      ) : null}
     </div>
   );
 });

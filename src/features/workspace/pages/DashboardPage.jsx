@@ -34,6 +34,8 @@ import {
   KeyRound,
   Clock,
   Sparkles,
+  GitCommit,
+  FileCode,
 } from 'lucide-react';
 
 function formatRelativeTime(dateString) {
@@ -67,6 +69,8 @@ export default function DashboardPage() {
 
   // Repositories state
   const [latestRepo, setLatestRepo] = useState(null);
+  const [latestCommit, setLatestCommit] = useState(null);
+  const [latestRepoFiles, setLatestRepoFiles] = useState([]);
   const [totalRepos, setTotalRepos] = useState(0);
   const [totalMembers, setTotalMembers] = useState(0);
 
@@ -133,8 +137,31 @@ export default function DashboardPage() {
           if (repos && repos.length > 0) {
             setLatestRepo(repos[0]);
             setTotalRepos(repos.length);
+
+            // Fetch real latest commit and files to fill the hero tile
+            const [commitRes, fileRes] = await Promise.all([
+              supabase
+                .from('commits')
+                .select('*')
+                .eq('repository_id', repos[0].id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+              supabase
+                .from('repository_files')
+                .select('*')
+                .eq('repository_id', repos[0].id)
+                .eq('type', 'file')
+                .order('created_at', { ascending: false })
+                .limit(3),
+            ]);
+
+            setLatestCommit(commitRes.data || null);
+            setLatestRepoFiles(fileRes.data || []);
           } else {
             setLatestRepo(null);
+            setLatestCommit(null);
+            setLatestRepoFiles([]);
             setTotalRepos(0);
           }
 
@@ -301,7 +328,9 @@ export default function DashboardPage() {
         <div className="lg:col-span-8">
           <Card
             spotlight={true}
-            className="p-6 h-full flex flex-col justify-between"
+            className={`p-6 flex flex-col justify-between ${
+              latestRepo ? 'h-full' : ''
+            }`}
           >
             <div>
               <div className="flex items-center justify-between gap-2">
@@ -328,12 +357,31 @@ export default function DashboardPage() {
                   <p className="text-xs text-text-sub mt-1 leading-relaxed">
                     {latestRepo.description || 'Active collaborative repository.'}
                   </p>
-                  {latestRepoWorkspace && (
-                    <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-subtle border border-border-dim text-[11px] text-text-sub">
-                      <Building2 size={12} />
-                      <span className="truncate">{latestRepoWorkspace.name}</span>
-                    </div>
-                  )}
+
+                  {/* Real commit / file details to fill the gap */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {latestCommit && (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-black/5 dark:bg-white/6 text-[11px] text-text-main font-mono">
+                        <GitCommit size={13} className="text-accent shrink-0" />
+                        <span className="truncate max-w-[200px]">{latestCommit.message}</span>
+                      </div>
+                    )}
+                    {latestRepoFiles.map((f) => (
+                      <span
+                        key={f.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] bg-subtle border border-border-dim text-[11px] font-mono text-text-sub"
+                      >
+                        <FileCode size={12} className="text-accent" />
+                        <span>{f.name}</span>
+                      </span>
+                    ))}
+                    {latestRepoWorkspace && (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-subtle border border-border-dim text-[11px] text-text-sub">
+                        <Building2 size={12} />
+                        <span className="truncate">{latestRepoWorkspace.name}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="mt-4">
@@ -343,16 +391,35 @@ export default function DashboardPage() {
                   <p className="text-xs text-text-sub mt-1 leading-relaxed max-w-lg">
                     Build projects, manage repositories, and run interactive coding assessments in one unified environment.
                   </p>
+                  <div className="mt-4 flex items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      magnetic={true}
+                      icon={Plus}
+                      onClick={() => setCreateOpen(true)}
+                    >
+                      Create workspace
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={KeyRound}
+                      onClick={() => setJoinOpen(true)}
+                    >
+                      Join with code
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="mt-6 pt-4 border-t border-border-dim/60 flex items-center justify-between flex-wrap gap-3">
-              <div className="text-xs text-text-sub">
-                {latestRepo ? 'Ready to resume your editor session' : 'Create or join a workspace to get started'}
-              </div>
+            {latestRepo && (
+              <div className="mt-6 pt-4 border-t border-border-dim/60 flex items-center justify-between flex-wrap gap-3">
+                <div className="text-xs text-text-sub">
+                  Ready to resume your editor session
+                </div>
 
-              {latestRepo ? (
                 <Button
                   variant="primary"
                   size="sm"
@@ -366,31 +433,8 @@ export default function DashboardPage() {
                 >
                   Open editor
                 </Button>
-              ) : workspaces.length > 0 ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  magnetic={true}
-                  icon={Plus}
-                  onClick={() => {
-                    setNewRepoWorkspaceId(workspaces[0].id);
-                    setNewRepoOpen(true);
-                  }}
-                >
-                  New repository
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  magnetic={true}
-                  icon={Plus}
-                  onClick={() => setCreateOpen(true)}
-                >
-                  Create workspace
-                </Button>
-              )}
-            </div>
+              </div>
+            )}
           </Card>
         </div>
 

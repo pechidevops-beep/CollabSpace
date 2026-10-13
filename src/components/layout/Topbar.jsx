@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ChevronRight, Settings, LogOut, Code2, LayoutDashboard, FolderGit2 } from 'lucide-react';
@@ -6,11 +6,14 @@ import NotificationBell from '../shared/NotificationBell';
 import ThemeToggle from '../ui/ThemeToggle';
 import { CommandPaletteTrigger } from '../ui/CommandPalette';
 import { DropdownMenu, DropdownItem, DropdownSeparator } from '../ui/DropdownMenu';
+import { getWorkspaceById } from '../../services/workspaceService';
+import { getRepositoryById } from '../../services/repositoryService';
 
 export default function Topbar({ onOpenCmd }) {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [resolvedNames, setResolvedNames] = useState({});
 
   const handleSignOut = async () => {
     try {
@@ -35,15 +38,60 @@ export default function Topbar({ onOpenCmd }) {
     .filter(Boolean)
     .filter((p) => p !== 'app');
 
+  // Resolve UUIDs to human-readable names
+  useEffect(() => {
+    const wsIdx = pathParts.indexOf('workspace');
+    if (wsIdx !== -1 && pathParts[wsIdx + 1]) {
+      const wsId = pathParts[wsIdx + 1];
+      if (!resolvedNames[wsId]) {
+        getWorkspaceById(wsId)
+          .then((ws) => {
+            if (ws?.name) {
+              setResolvedNames((prev) => ({ ...prev, [wsId]: ws.name }));
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    const repoIdx = pathParts.indexOf('repo');
+    if (repoIdx !== -1 && pathParts[repoIdx + 1]) {
+      const rId = pathParts[repoIdx + 1];
+      if (!resolvedNames[rId]) {
+        getRepositoryById(rId)
+          .then((r) => {
+            if (r?.name) {
+              setResolvedNames((prev) => ({ ...prev, [rId]: r.name }));
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [location.pathname]);
+
   const breadcrumbs = pathParts.map((part, index) => {
     const url = `/app/${pathParts.slice(0, index + 1).join('/')}`;
-    const label = part.charAt(0).toUpperCase() + part.slice(1);
+    const isUuid = /^[0-9a-f-]{16,}$/i.test(part);
+
+    let label = part.charAt(0).toUpperCase() + part.slice(1);
+    if (isUuid) {
+      if (resolvedNames[part]) {
+        label = resolvedNames[part];
+      } else if (index > 0 && pathParts[index - 1] === 'workspace') {
+        label = 'Workspace';
+      } else if (index > 0 && pathParts[index - 1] === 'repo') {
+        label = 'Repository';
+      } else {
+        label = 'Details';
+      }
+    }
+
     return { label, url, isLast: index === pathParts.length - 1 };
   });
 
   return (
     <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-dim bg-surface/80 backdrop-blur-md sticky top-0 z-20 select-none">
-      {/* Breadcrumbs */}
+      {/* Breadcrumbs with resolved entity names */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs">
         <Link
           to="/app/dashboard"
@@ -61,7 +109,7 @@ export default function Topbar({ onOpenCmd }) {
             ) : (
               <Link
                 to={crumb.url}
-                className="text-text-sub hover:text-text-main transition-colors truncate max-w-[100px]"
+                className="text-text-sub hover:text-text-main transition-colors truncate max-w-[120px]"
               >
                 {crumb.label}
               </Link>

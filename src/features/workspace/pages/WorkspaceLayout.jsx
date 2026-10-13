@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, NavLink, useParams, Link } from 'react-router-dom';
+import { Outlet, NavLink, useParams, Link, useLocation } from 'react-router-dom';
 import { getWorkspaceById } from '../../../services/workspaceService';
 import { LayoutGrid, BookOpen } from 'lucide-react';
 import Skeleton from '../../../components/ui/Skeleton';
 
 export default function WorkspaceLayout() {
     const { workspaceId } = useParams();
+    const location = useLocation();
     const [workspace, setWorkspace] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+
+    const isEditor = location.pathname.includes('/editor/');
 
     useEffect(() => {
         if (!workspaceId) return;
@@ -26,6 +29,11 @@ export default function WorkspaceLayout() {
         load();
     }, [workspaceId]);
 
+    // Focus mode: Hide workspace header/tabs completely on editor route
+    if (isEditor) {
+        return <Outlet />;
+    }
+
     if (loading) {
         return (
             <div className="space-y-4 py-4 animate-fade-up">
@@ -42,10 +50,10 @@ export default function WorkspaceLayout() {
     if (error || !workspace) {
         return (
             <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-center p-6 rounded-[14px] bg-surface border border-border-dim max-w-sm">
+                <div className="text-center p-6 rounded-[16px] bg-surface border border-border-dim max-w-sm">
                     <p className="text-xs text-semantic-danger mb-3">{error || 'Workspace not found.'}</p>
                     <Link to="/app/dashboard" className="text-xs text-accent hover:underline font-medium">
-                        ← Back to Dashboard
+                        Back to Dashboard
                     </Link>
                 </div>
             </div>
@@ -59,16 +67,16 @@ export default function WorkspaceLayout() {
 
     return (
         <div className="space-y-0 animate-fade-up">
-            {/* Workspace Header */}
-            <div className="mb-6">
+            {/* Single Workspace Header */}
+            <header className="mb-6">
                 <h1 className="text-xl sm:text-2xl font-semibold text-text-main tracking-tight">{workspace.name}</h1>
                 <p className="text-xs text-text-sub mt-1">
                     {workspace.type === 'classroom' ? 'Assessments' : 'Team'} workspace
                 </p>
-            </div>
+            </header>
 
-            {/* Tab Navigation */}
-            <div className="flex items-center gap-1 border-b border-border-dim mb-6">
+            {/* Tab Navigation with strict 24px (mb-6) spacing below */}
+            <nav className="flex items-center gap-1 border-b border-border-dim mb-6" aria-label="Workspace tabs">
                 {tabs.map((tab) => (
                     <NavLink
                         key={tab.to}
@@ -85,7 +93,7 @@ export default function WorkspaceLayout() {
                         {tab.label}
                     </NavLink>
                 ))}
-            </div>
+            </nav>
 
             {/* Child route content */}
             <Outlet />

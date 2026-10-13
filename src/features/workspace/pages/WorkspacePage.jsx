@@ -160,16 +160,10 @@ export default function WorkspacePage() {
     return (
         <PageTransition>
             <div className="space-y-8 pb-8 animate-fade-up">
-                {/* Header */}
-                <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-xl sm:text-2xl font-semibold text-text-main tracking-tight">
-                            {workspace.name}
-                        </h1>
-                        <p className="text-xs text-text-sub mt-1">
-                            {workspace.type === 'personal' ? 'Personal workspace' : 'Team workspace'} ·{' '}
-                            {members.length} member{members.length !== 1 ? 's' : ''} · {repositories.length} repo{repositories.length !== 1 ? 's' : ''}
-                        </p>
+                {/* Action Bar (Header is owned by WorkspaceLayout) */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="text-xs text-text-sub font-medium">
+                        {members.length} member{members.length !== 1 ? 's' : ''} · {repositories.length} repo{repositories.length !== 1 ? 's' : ''}
                     </div>
                     <div className="flex items-center gap-2">
                         <Button
@@ -191,7 +185,7 @@ export default function WorkspacePage() {
                             </Button>
                         )}
                     </div>
-                </header>
+                </div>
 
                 {error && (
                     <div className="p-3.5 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger text-xs">

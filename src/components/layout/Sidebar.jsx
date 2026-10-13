@@ -134,7 +134,7 @@ export default function Sidebar({ onOpenCmd }) {
                   <Tooltip content={activeWorkspace ? `Workspace: ${activeWorkspace.name}` : 'Switch Workspace'} position="right">
                     <button
                       type="button"
-                      className="w-11 h-11 flex items-center justify-center rounded-[10px] border border-border-dim bg-subtle hover:bg-elevated hover:border-border-strong text-text-sub hover:text-text-main transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                      className="w-11 h-11 flex items-center justify-center rounded-[10px] border-0 bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                       aria-label="Switch workspace"
                     >
                       <Building2 size={18} />
@@ -264,7 +264,7 @@ function RailItem({ to, icon: Icon, label, isExpanded, currentPath }) {
         <motion.div
           layoutId="railActiveIndicator"
           transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-          className="absolute inset-0 bg-accent/15 border border-accent/25 rounded-[10px] -z-10"
+          className="absolute inset-0 bg-accent/15 rounded-[10px] -z-10"
         />
       )}
       <Icon

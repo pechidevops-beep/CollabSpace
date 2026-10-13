@@ -108,31 +108,36 @@ export async function getRepositoryFileById(fileId) {
 
 export async function createRepositoryFile({
   repoId,
+  repositoryId,
   name,
   parentId = null,
   content = '',
   createdBy = null,
+  actorId = null,
 }) {
+  const actualRepoId = repoId || repositoryId;
+  const actualActorId = createdBy || actorId;
+
   const { data, error } = await supabase
     .from('repository_files')
     .insert({
-      repository_id: repoId,
+      repository_id: actualRepoId,
       name,
       type: 'file',
       parent_id: parentId,
       content,
-      created_by: createdBy,
+      created_by: actualActorId,
     })
     .select('*')
     .maybeSingle();
   if (error) throw error;
 
-  const workspaceId = await getRepositoryWorkspaceId(repoId);
+  const workspaceId = await getRepositoryWorkspaceId(actualRepoId);
   await logActivity({
     type: 'file_created',
-    actorId: createdBy,
+    actorId: actualActorId,
     workspaceId,
-    repositoryId: repoId,
+    repositoryId: actualRepoId,
     message: `File "${name}" was created.`,
   });
 
@@ -141,30 +146,35 @@ export async function createRepositoryFile({
 
 export async function createRepositoryFolder({
   repoId,
+  repositoryId,
   name,
   parentId = null,
   createdBy = null,
+  actorId = null,
 }) {
+  const actualRepoId = repoId || repositoryId;
+  const actualActorId = createdBy || actorId;
+
   const { data, error } = await supabase
     .from('repository_files')
     .insert({
-      repository_id: repoId,
+      repository_id: actualRepoId,
       name,
       type: 'folder',
       parent_id: parentId,
       content: null,
-      created_by: createdBy,
+      created_by: actualActorId,
     })
     .select('*')
     .maybeSingle();
   if (error) throw error;
 
-  const workspaceId = await getRepositoryWorkspaceId(repoId);
+  const workspaceId = await getRepositoryWorkspaceId(actualRepoId);
   await logActivity({
     type: 'folder_created',
-    actorId: createdBy,
+    actorId: actualActorId,
     workspaceId,
-    repositoryId: repoId,
+    repositoryId: actualRepoId,
     message: `Folder "${name}" was created.`,
   });
 

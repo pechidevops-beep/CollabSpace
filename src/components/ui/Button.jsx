@@ -5,21 +5,21 @@ const variantClasses = {
   primary:
     'bg-accent text-on-accent border border-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_2px_rgba(0,0,0,0.08)] hover:-translate-y-[1px] hover:brightness-105 active:scale-[0.98]',
   secondary:
-    'bg-surface text-text-main hover:bg-subtle border border-border-dim hover:border-border-strong active:scale-[0.98]',
+    'bg-black/5 hover:bg-black/8 dark:bg-white/6 dark:hover:bg-white/10 text-text-main border-0 active:scale-[0.98]',
   outline:
-    'bg-transparent text-text-main border border-border-dim hover:border-border-strong hover:bg-subtle active:scale-[0.98]',
+    'bg-black/5 hover:bg-black/8 dark:bg-white/6 dark:hover:bg-white/10 text-text-main border-0 active:scale-[0.98]',
   ghost:
-    'bg-transparent text-text-sub hover:text-text-main hover:bg-subtle border border-transparent active:scale-[0.98]',
+    'bg-transparent text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 border-0 active:scale-[0.98]',
   danger:
     'bg-semantic-danger text-white hover:opacity-90 border border-transparent active:scale-[0.98]',
 };
 
 const sizeClasses = {
-  sm: 'h-8 px-3 text-xs gap-1.5 rounded-[8px]',
+  sm: 'h-8 px-3 text-xs gap-1.5 rounded-[10px]',
   md: 'h-10 px-4 text-xs font-medium gap-2 rounded-[10px]',
-  lg: 'h-11 px-5 text-sm font-medium gap-2 rounded-[10px]',
+  lg: 'h-11 px-5 text-sm font-medium gap-2.5 rounded-[12px]',
   icon: 'h-10 w-10 p-0 rounded-[10px]',
-  'icon-sm': 'h-8 w-8 p-0 rounded-[8px]',
+  'icon-sm': 'h-8 w-8 p-0 rounded-[10px]',
 };
 
 export const Button = forwardRef(function Button(

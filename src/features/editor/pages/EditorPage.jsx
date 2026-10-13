@@ -13,6 +13,7 @@ import {
     getRepositoryFiles,
     renameRepositoryFile,
 } from '../../../services/repositoryService';
+import { getWorkspaceById } from '../../../services/workspaceService';
 import {
     createCommit,
     getCommitHistory,
@@ -22,9 +23,10 @@ import {
 } from '../../../services/editorService';
 import { buildFileTree, buildFilePathMap, detectLanguage } from '../../../utils/repository';
 import {
-    Save, Download, FolderDown, Plus, GitCommit,
-    X, Circle, History, Play, Terminal, ChevronDown, ChevronUp, Loader2,
-    RotateCcw, FileCode, ChevronRight, User, Lock,
+    Save, Download, FolderDown, Plus, FolderPlus, GitCommit,
+    X, History, Play, Terminal, Loader2,
+    ChevronRight, ArrowLeft, PanelLeftClose, PanelLeft,
+    CheckCircle2, AlertCircle, FileCode, Lock,
 } from 'lucide-react';
 import { usePermissions } from '../../../hooks/usePermissions';
 
@@ -33,6 +35,7 @@ export default function EditorPage() {
     const { user } = useAuth();
     const { canEditFiles, canCommit } = usePermissions(workspaceId);
 
+    const [workspace, setWorkspace] = useState(null);
     const [repository, setRepository] = useState(null);
     const [files, setFiles] = useState([]);
     const [tree, setTree] = useState([]);
@@ -49,7 +52,15 @@ export default function EditorPage() {
     const [saving, setSaving] = useState(false);
     const [savedMessage, setSavedMessage] = useState('');
 
-    // File creation
+    // Layout states: Resizable & Collapsible Explorer & Output
+    const [explorerOpen, setExplorerOpen] = useState(true);
+    const [explorerWidth, setExplorerWidth] = useState(240);
+    const [isResizingExplorer, setIsResizingExplorer] = useState(false);
+    const [showOutput, setShowOutput] = useState(false);
+    const [outputHeight, setOutputHeight] = useState(200);
+    const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+
+    // File creation modal
     const [fileFormOpen, setFileFormOpen] = useState(false);
     const [fileFormParentId, setFileFormParentId] = useState(null);
     const [fileFormType, setFileFormType] = useState('file');
@@ -66,19 +77,12 @@ export default function EditorPage() {
 
     // Download
     const [downloadingFile, setDownloadingFile] = useState(false);
+    const [downloadingRepo, setDownloadingRepo] = useState(false);
 
-    // Commit history detail
-    const [expandedCommitId, setExpandedCommitId] = useState(null);
-    const [commitFilesList, setCommitFilesList] = useState([]);
-    const [commitFilesLoading, setCommitFilesLoading] = useState(false);
-    const [restoringCommitId, setRestoringCommitId] = useState(null);
-
-    // Code execution state
+    // Execution
     const [running, setRunning] = useState(false);
     const [executionOutput, setExecutionOutput] = useState(null);
-    const [showOutput, setShowOutput] = useState(false);
     const outputRef = useRef(null);
-    const [downloadingRepo, setDownloadingRepo] = useState(false);
     const [stdinValue, setStdinValue] = useState('');
 
     const buildSnapshotFiles = useCallback(() => (
@@ -100,15 +104,17 @@ export default function EditorPage() {
             setLoading(true);
             setError('');
             try {
-                const [repo, fileData] = await Promise.all([
+                const [ws, repo, fileData] = await Promise.all([
+                    workspaceId ? getWorkspaceById(workspaceId).catch(() => null) : null,
                     getRepositoryById(repoId),
                     getRepositoryFiles(repoId),
                 ]);
+                setWorkspace(ws);
                 setRepository(repo);
-                setFiles(fileData);
-                setTree(buildFileTree(fileData));
+                setFiles(fileData || []);
+                setTree(buildFileTree(fileData || []));
 
-                const firstFile = fileData.find(f => f.type === 'file');
+                const firstFile = (fileData || []).find(f => f.type === 'file');
                 if (firstFile) {
                     setOpenTabs([{ id: firstFile.id, name: firstFile.name }]);
                     setActiveTabId(firstFile.id);
@@ -120,7 +126,7 @@ export default function EditorPage() {
             setLoading(false);
         };
         load();
-    }, [repoId]);
+    }, [repoId, workspaceId]);
 
     useEffect(() => {
         if (!repoId) return;
@@ -130,6 +136,25 @@ export default function EditorPage() {
     useEffect(() => {
         setTree(buildFileTree(files));
     }, [files]);
+
+    // Resizer logic
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (!isResizingExplorer) return;
+            const newWidth = Math.max(160, Math.min(480, e.clientX));
+            setExplorerWidth(newWidth);
+        };
+        const handleMouseUp = () => setIsResizingExplorer(false);
+
+        if (isResizingExplorer) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isResizingExplorer]);
 
     const handleSelectFile = useCallback((fileId) => {
         const file = files.find(f => f.id === fileId);
@@ -248,97 +273,70 @@ export default function EditorPage() {
 
     const handleCreateSubmit = async (e) => {
         e.preventDefault();
-        const name = newItemName.trim();
-        if (!name) { setCreateError('Name is required.'); return; }
-
-        const siblings = files.filter(f =>
-            (f.parent_id || null) === (fileFormParentId || null) &&
-            f.repository_id === repoId
-        );
-        if (siblings.some(f => f.name?.toLowerCase() === name.toLowerCase())) {
-            setCreateError('An item with that name already exists here.');
-            return;
-        }
-
+        if (!newItemName.trim()) return;
         setCreating(true);
         setCreateError('');
         try {
-            let newItem;
             if (fileFormType === 'folder') {
-                newItem = await createRepositoryFolder({
-                    repoId,
-                    name,
+                const created = await createRepositoryFolder({
+                    repositoryId: repoId,
                     parentId: fileFormParentId,
-                    createdBy: user?.id || null,
+                    name: newItemName.trim(),
+                    actorId: user?.id || null,
                 });
+                setFiles(prev => [...prev, created]);
             } else {
-                newItem = await createRepositoryFile({
-                    repoId,
-                    name,
+                const created = await createRepositoryFile({
+                    repositoryId: repoId,
                     parentId: fileFormParentId,
-                    createdBy: user?.id || null,
+                    name: newItemName.trim(),
+                    content: '',
+                    actorId: user?.id || null,
                 });
-            }
-            setFiles(prev => [...prev, newItem]);
-            if (fileFormType === 'file') {
-                handleSelectFile(newItem.id);
-                setTabContents(prev => ({ ...prev, [newItem.id]: '' }));
+                setFiles(prev => [...prev, created]);
+                handleSelectFile(created.id);
             }
             setFileFormOpen(false);
             setNewItemName('');
-        } catch (e) {
-            setCreateError(e.message || 'Failed to create.');
+        } catch (err) {
+            setCreateError(err.message || 'Failed to create');
         }
         setCreating(false);
     };
 
-    const handleRename = useCallback(async (fileId, newName) => {
+    const handleRenameFile = useCallback(async (fileId, newName) => {
         try {
-            const updated = await renameRepositoryFile({ fileId, newName, actorId: user?.id || null });
+            const updated = await renameRepositoryFile({ fileId, name: newName, actorId: user?.id || null });
             setFiles(prev => prev.map(f => f.id === updated.id ? updated : f));
-            setOpenTabs(prev => prev.map(t => t.id === updated.id ? { ...t, name: updated.name } : t));
+            setOpenTabs(prev => prev.map(t => t.id === fileId ? { ...t, name: updated.name } : t));
         } catch (e) {
-            setError(e.message || 'Rename failed');
+            setError(e.message || 'Failed to rename');
         }
-    }, []);
+    }, [user?.id]);
 
-    const handleDelete = useCallback(async (fileId) => {
-        const file = files.find(f => f.id === fileId);
-        if (!file) return;
-        const confirmed = window.confirm(`Delete "${file.name}"? ${file.type === 'folder' ? 'This will also delete all files inside.' : ''}`);
-        if (!confirmed) return;
+    const handleDeleteFile = useCallback(async (fileId) => {
         try {
             await deleteRepositoryFile({ fileId, actorId: user?.id || null });
-            const idsToRemove = new Set();
-            const collect = (id) => {
-                idsToRemove.add(id);
-                files.filter(f => f.parent_id === id).forEach(child => collect(child.id));
-            };
-            collect(fileId);
-            setFiles(prev => prev.filter(f => !idsToRemove.has(f.id)));
-            setOpenTabs(prev => prev.filter(t => !idsToRemove.has(t.id)));
-            if (idsToRemove.has(activeTabId)) {
-                setActiveTabId(openTabs.find(t => !idsToRemove.has(t.id))?.id || null);
-            }
+            setFiles(prev => prev.filter(f => f.id !== fileId));
+            handleCloseTab(fileId);
         } catch (e) {
-            setError(e.message || 'Delete failed');
+            setError(e.message || 'Failed to delete');
         }
-    }, [files, activeTabId, openTabs]);
+    }, [user?.id, handleCloseTab]);
 
     const handleDownloadCurrentFile = () => {
         if (!activeTabId) return;
-        const file = files.find(f => f.id === activeTabId);
-        if (!file) return;
         setDownloadingFile(true);
         try {
-            const blob = new Blob([tabContents[activeTabId] ?? ''], { type: 'text/plain;charset=utf-8' });
+            const file = files.find(f => f.id === activeTabId);
+            if (!file) return;
+            const content = tabContents[activeTabId] ?? file.content ?? '';
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = file.name || 'file.txt';
-            document.body.appendChild(a);
+            a.download = file.name;
             a.click();
-            document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } finally {
             setDownloadingFile(false);
@@ -346,41 +344,99 @@ export default function EditorPage() {
     };
 
     const handleDownloadRepo = async () => {
-        if (!repository || files.length === 0) return;
+        if (files.length === 0 || downloadingRepo) return;
         setDownloadingRepo(true);
         try {
             const zip = new JSZip();
-            const getPath = (fileId) => {
-                const f = files.find(x => x.id === fileId);
-                if (!f) return '';
-                if (f.parent_id) return getPath(f.parent_id) + '/' + f.name;
-                return f.name;
-            };
-            files.filter(f => f.type === 'file').forEach(f => {
-                zip.file(getPath(f.id), f.content ?? '');
+            files.forEach(file => {
+                if (file.type === 'file') {
+                    const filePath = pathMap.get(file.id) || file.name;
+                    const content = tabContents[file.id] ?? file.content ?? '';
+                    zip.file(filePath, content);
+                }
             });
             const blob = await zip.generateAsync({ type: 'blob' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${repository.name || 'repository'}.zip`;
-            document.body.appendChild(a);
+            a.download = `${repository?.name || 'repository'}.zip`;
             a.click();
-            document.body.removeChild(a);
             URL.revokeObjectURL(url);
-        } catch (e) {
-            setError('Failed to create zip.');
+        } catch (err) {
+            setError(err.message || 'Failed to download zip');
         } finally {
             setDownloadingRepo(false);
         }
     };
 
+    const handleRunCode = async () => {
+        if (!activeTabId || running) return;
+        const file = files.find(f => f.id === activeTabId);
+        if (!file) return;
+        const lang = file.name || currentLanguage;
+        setRunning(true);
+        setShowOutput(true);
+        setExecutionOutput(null);
+        try {
+            let result;
+            if (isProjectLanguage(lang)) {
+                const projectFiles = files
+                    .filter(f => f.type === 'file')
+                    .map(f => ({
+                        path: pathMap.get(f.id) || f.name,
+                        content: tabContents[f.id] ?? f.content ?? '',
+                    }));
+                const detectedLang = lang.toLowerCase().endsWith('.java') ? 'java'
+                    : lang.toLowerCase().endsWith('.py') ? 'python'
+                        : currentLanguage;
+                const langFiles = projectFiles.filter(f =>
+                    detectedLang === 'java' ? f.path.endsWith('.java') : f.path.endsWith('.py')
+                );
+                setExecutionOutput({
+                    command: detectedLang === 'java'
+                        ? `javac ${langFiles.map(f => f.path).join(' ')} && java <MainClass>`
+                        : `python3 ${langFiles.find(f => f.path.includes('main.py'))?.path || langFiles[0]?.path || 'main.py'}`,
+                    fileCount: langFiles.length,
+                    language: detectedLang === 'java' ? 'Java' : 'Python',
+                    version: detectedLang === 'java' ? 'OpenJDK 17' : 'Python 3.11',
+                    phase: 'compiling',
+                });
+                result = await executeProject({ language: detectedLang, files: projectFiles, stdin: stdinValue || undefined });
+                result.command = result.exitCode === 0
+                    ? (detectedLang === 'java'
+                        ? `javac (${langFiles.length} files) && java → exit 0`
+                        : `python3 → exit 0`)
+                    : (detectedLang === 'java'
+                        ? `javac/java → exit ${result.exitCode}`
+                        : `python3 → exit ${result.exitCode}`);
+                result.fileCount = langFiles.length;
+            } else if (isLanguageSupported(lang)) {
+                result = await executeCode({ code: currentContent, language: lang });
+                result.command = `run ${file.name}`;
+            } else {
+                result = { stdout: '', stderr: `Language not supported: ${lang}`, exitCode: 1, language: lang, version: '' };
+            }
+            setExecutionOutput(result);
+        } catch (err) {
+            setExecutionOutput({
+                stdout: '',
+                stderr: err.message,
+                exitCode: 1,
+                language: lang,
+                version: '',
+                command: 'execution failed',
+            });
+        }
+        setRunning(false);
+        setTimeout(() => { if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }, 100);
+    };
+
     if (loading) {
         return (
-            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-text-dim">
+            <div className="flex h-screen items-center justify-center text-xs text-text-dim">
                 <div className="flex flex-col items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                    Loading editor…
+                    <Loader2 size={24} className="animate-spin text-accent" />
+                    <span>Loading editor session...</span>
                 </div>
             </div>
         );
@@ -388,7 +444,7 @@ export default function EditorPage() {
 
     if (!repository) {
         return (
-            <div className="flex h-[calc(100vh-80px)] items-center justify-center text-xs text-text-dim">
+            <div className="flex h-screen items-center justify-center text-xs text-text-dim">
                 Repository not found.
             </div>
         );
@@ -400,510 +456,410 @@ export default function EditorPage() {
     const currentLanguage = activeFile ? detectLanguage(activeFile.name) : 'plaintext';
 
     return (
-        <div className="flex h-[calc(100vh-80px)] flex-col gap-0">
-            {/* Top toolbar */}
-            <div className="flex items-center justify-between bg-surface border-b border-border-dim px-3 py-1.5 text-xs text-text-sub shrink-0">
-                <div className="flex items-center gap-2">
+        <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-canvas text-text-main select-none">
+            {/* Slim Top Bar (40px, one row, 8px gaps) */}
+            <header className="h-10 shrink-0 bg-surface border-b border-border-dim px-3 flex items-center justify-between gap-2 z-20">
+                {/* Left: Back button + Breadcrumb (Workspace > Repo > File) */}
+                <div className="flex items-center gap-2 min-w-0">
                     <Link
                         to={`/app/workspace/${workspaceId}`}
-                        className="rounded-md border border-border-dim bg-subtle px-2 py-1 text-[11px] text-text-main hover:border-border-strong hover:text-text-main transition"
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main text-[11px] font-medium transition shrink-0"
+                        title="Back to workspace overview"
                     >
-                        ← Back
+                        <ArrowLeft size={13} />
+                        <span className="hidden sm:inline">Back</span>
                     </Link>
-                    <div className="flex flex-col">
-                        <span className="text-sm font-medium text-text-main">{repository.name}</span>
-                        {repository.visibility && (
-                            <span className={`text-[10px] ${repository.visibility === 'private' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                {repository.visibility}
-                            </span>
+
+                    <div className="h-4 w-px bg-border-dim shrink-0" />
+
+                    {/* Collapsible explorer toggle button */}
+                    <button
+                        type="button"
+                        onClick={() => setExplorerOpen(p => !p)}
+                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 transition shrink-0"
+                        title={explorerOpen ? 'Hide Explorer' : 'Show Explorer'}
+                    >
+                        {explorerOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
+                    </button>
+
+                    {/* Breadcrumbs with real names, no UUIDs */}
+                    <nav className="flex items-center gap-1.5 text-xs text-text-sub min-w-0 truncate">
+                        <span className="truncate font-medium text-text-main">
+                            {workspace?.name || 'Workspace'}
+                        </span>
+                        <ChevronRight size={12} className="text-text-dim shrink-0" />
+                        <span className="truncate text-text-sub font-medium">
+                            {repository.name}
+                        </span>
+                        {activeFile && (
+                            <>
+                                <ChevronRight size={12} className="text-text-dim shrink-0" />
+                                <span className="truncate text-text-main font-semibold">
+                                    {activeFile.name}
+                                </span>
+                            </>
                         )}
-                        {activePath && (
-                            <span className="text-[10px] text-text-dim">{activePath}</span>
-                        )}
-                    </div>
+                    </nav>
                 </div>
-                <div className="flex items-center gap-2">
-                    {savedMessage && <span className="text-[11px] text-emerald-400">{savedMessage}</span>}
-                    {error && <span className="text-[11px] text-rose-400 max-w-[200px] truncate">{error}</span>}
-                    <button onClick={() => setCommitDialogOpen(true)} disabled={!canCommit} className="btn-editor" title={canCommit ? 'Commit changes' : 'No permission to commit'}>
-                        <GitCommit size={13} /> Commit
+
+                {/* Right Actions: One row, 8px gaps */}
+                <div className="flex items-center gap-2 shrink-0">
+                    {savedMessage && (
+                        <span className="text-[11px] text-accent font-medium hidden sm:inline animate-fade-in">
+                            {savedMessage}
+                        </span>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={() => setCommitDialogOpen(true)}
+                        disabled={!canCommit}
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-main text-[11px] font-medium transition disabled:opacity-50"
+                        title={canCommit ? 'Commit changes' : 'No permission'}
+                    >
+                        <GitCommit size={13} />
+                        <span className="hidden sm:inline">Commit</span>
                     </button>
-                    <button onClick={() => setCommitsOpen(prev => !prev)} className="btn-editor" title="History">
-                        <History size={13} /> {commits.length}
+
+                    <button
+                        type="button"
+                        onClick={() => setCommitsOpen(p => !p)}
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main text-[11px] font-medium transition"
+                        title="Commit history"
+                    >
+                        <History size={13} />
+                        <span>{commits.length}</span>
                     </button>
-                    <button onClick={handleDownloadCurrentFile} disabled={!activeTabId || downloadingFile} className="btn-editor" title="Download file">
+
+                    <button
+                        type="button"
+                        onClick={handleDownloadCurrentFile}
+                        disabled={!activeTabId || downloadingFile}
+                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 transition disabled:opacity-50"
+                        title="Download file"
+                    >
                         <Download size={13} />
                     </button>
-                    <button onClick={handleDownloadRepo} disabled={downloadingRepo || files.length === 0} className="btn-editor" title="Download repo">
+
+                    <button
+                        type="button"
+                        onClick={handleDownloadRepo}
+                        disabled={downloadingRepo || files.length === 0}
+                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 transition disabled:opacity-50"
+                        title="Download zip"
+                    >
                         <FolderDown size={13} />
                     </button>
-                    <button onClick={handleSave} disabled={!activeTabId || saving || !canEditFiles} className="btn-editor-primary" title={canEditFiles ? 'Save' : 'No permission to save'}>
-                        {!canEditFiles ? <Lock size={13} /> : <Save size={13} />} {saving ? 'Saving…' : 'Save'}
-                    </button>
-                    <div className="w-px h-4 bg-subtle" />
+
                     <button
-                        onClick={async () => {
-                            if (!activeTabId || running) return;
-                            const file = files.find(f => f.id === activeTabId);
-                            if (!file) return;
-                            const lang = file.name || currentLanguage;
-                            setRunning(true);
-                            setShowOutput(true);
-                            setExecutionOutput(null);
-                            try {
-                                let result;
-                                if (isProjectLanguage(lang)) {
-                                    // ── Docker multi-file execution (Java / Python) ──
-                                    const projectFiles = files
-                                        .filter(f => f.type === 'file')
-                                        .map(f => ({
-                                            path: pathMap.get(f.id) || f.name,
-                                            content: tabContents[f.id] ?? f.content ?? '',
-                                        }));
-                                    const detectedLang = lang.toLowerCase().endsWith('.java') ? 'java'
-                                        : lang.toLowerCase().endsWith('.py') ? 'python'
-                                            : currentLanguage;
-                                    const langFiles = projectFiles.filter(f =>
-                                        detectedLang === 'java' ? f.path.endsWith('.java') : f.path.endsWith('.py')
-                                    );
-                                    setExecutionOutput({
-                                        command: detectedLang === 'java'
-                                            ? `javac ${langFiles.map(f => f.path).join(' ')} && java <MainClass>`
-                                            : `python3 ${langFiles.find(f => f.path.includes('main.py'))?.path || langFiles[0]?.path || 'main.py'}`,
-                                        fileCount: langFiles.length,
-                                        language: detectedLang === 'java' ? 'Java' : 'Python',
-                                        version: detectedLang === 'java' ? 'OpenJDK 17' : 'Python 3.11',
-                                        phase: 'compiling',
-                                    });
-                                    result = await executeProject({ language: detectedLang, files: projectFiles, stdin: stdinValue || undefined });
-                                    result.command = result.exitCode === 0
-                                        ? (detectedLang === 'java'
-                                            ? `javac (${langFiles.length} files) && java → exit 0`
-                                            : `python3 → exit 0`)
-                                        : (detectedLang === 'java'
-                                            ? `javac/java → exit ${result.exitCode}`
-                                            : `python3 → exit ${result.exitCode}`);
-                                    result.fileCount = langFiles.length;
-                                } else if (isLanguageSupported(lang)) {
-                                    // ── Judge0 single-file execution ──
-                                    result = await executeCode({ code: currentContent, language: lang });
-                                    result.command = `run ${file.name}`;
-                                } else {
-                                    result = { stdout: '', stderr: `Language not supported: ${lang}`, exitCode: 1, language: lang, version: '' };
-                                }
-                                setExecutionOutput(result);
-                            } catch (err) {
-                                setExecutionOutput({ stdout: '', stderr: err.message, exitCode: 1, language: lang, version: '', command: 'execution failed' });
-                            }
-                            setRunning(false);
-                            setTimeout(() => { if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }, 100);
-                        }}
-                        disabled={!activeTabId || running}
-                        className="btn-editor-primary !bg-emerald-600 hover:!bg-emerald-500 disabled:!bg-emerald-800 disabled:!text-emerald-400"
-                        title="Run code"
+                        type="button"
+                        onClick={handleSave}
+                        disabled={!activeTabId || saving || !canEditFiles}
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-main text-[11px] font-medium transition disabled:opacity-50"
+                        title="Save file (Ctrl+S / Cmd+S)"
                     >
-                        {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                        {running ? 'Running…' : 'Run'}
+                        {!canEditFiles ? <Lock size={13} /> : <Save size={13} />}
+                        <span>{saving ? 'Saving...' : 'Save'}</span>
+                    </button>
+
+                    {/* Run Button: Non-clipping, filled mint accent */}
+                    <button
+                        type="button"
+                        onClick={handleRunCode}
+                        disabled={!activeTabId || running}
+                        className="inline-flex items-center justify-center gap-1.5 h-7 px-3.5 rounded-[10px] bg-accent text-on-accent text-[11px] font-semibold transition hover:brightness-105 active:scale-[0.98] disabled:opacity-50 shrink-0 shadow-sm"
+                        title="Run code in browser/container"
+                    >
+                        {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} className="fill-current" />}
+                        <span>{running ? 'Running...' : 'Run'}</span>
                     </button>
                 </div>
-            </div>
+            </header>
 
-            {/* Commit dialog */}
+            {/* Commit Dialog Modal */}
             {commitDialogOpen && (
-                <div className="bg-surface border-b border-border-dim px-4 py-3 shrink-0 animate-fade-in">
+                <div className="bg-surface border-b border-border-dim px-4 py-3 shrink-0 animate-fade-in z-20">
                     <form onSubmit={handleCommit} className="flex items-center gap-3">
-                        <GitCommit size={16} className="text-brand-400 shrink-0" />
+                        <GitCommit size={16} className="text-accent shrink-0" />
                         <input
                             autoFocus
                             value={commitMessage}
                             onChange={e => setCommitMessage(e.target.value)}
-                            placeholder="Commit message (e.g. 'Add login component')"
-                            className="flex-1 bg-canvas border border-border-dim rounded px-3 py-1.5 text-xs text-text-main outline-none focus:border-brand-500"
+                            placeholder="Commit message (e.g. 'Add palindrome logic')"
+                            className="flex-1 bg-black/[.03] dark:bg-white/5 border border-border-dim rounded-[10px] px-3 py-1.5 text-xs text-text-main focus:outline-none focus:border-accent"
                         />
-                        <button type="submit" disabled={committing || !commitMessage.trim()} className="btn-editor-primary">
-                            {committing ? 'Committing…' : 'Commit All'}
-                        </button>
-                        <button type="button" onClick={() => setCommitDialogOpen(false)} className="btn-editor">
+                        <button
+                            type="button"
+                            onClick={() => setCommitDialogOpen(false)}
+                            className="px-3 py-1.5 rounded-[10px] text-xs text-text-sub hover:bg-black/5 dark:hover:bg-white/6"
+                        >
                             Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={committing || !commitMessage.trim()}
+                            className="px-3 py-1.5 rounded-[10px] bg-accent text-on-accent text-xs font-medium hover:brightness-105 disabled:opacity-50"
+                        >
+                            {committing ? 'Committing...' : 'Commit'}
                         </button>
                     </form>
                 </div>
             )}
 
-            {/* Create file/folder form */}
+            {/* Main Editor Body */}
+            <div className="flex-1 flex min-h-0 relative overflow-hidden">
+                {/* Collapsible, Resizable Explorer Sidebar */}
+                {explorerOpen && (
+                    <aside
+                        style={{ width: `${explorerWidth}px` }}
+                        className="border-r border-border-dim bg-surface flex flex-col shrink-0 relative overflow-hidden select-none"
+                    >
+                        <div className="h-9 px-3 border-b border-border-dim flex items-center justify-between text-xs font-semibold text-text-sub uppercase tracking-wider">
+                            <span>Explorer</span>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => handleCreateFile(null)}
+                                    className="p-1 rounded-[6px] hover:bg-black/5 dark:hover:bg-white/6 text-text-sub hover:text-text-main"
+                                    title="New File"
+                                >
+                                    <Plus size={14} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCreateFolder(null)}
+                                    className="p-1 rounded-[6px] hover:bg-black/5 dark:hover:bg-white/6 text-text-sub hover:text-text-main"
+                                    title="New Folder"
+                                >
+                                    <FolderPlus size={14} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            <FileTree
+                                tree={tree}
+                                currentFileId={activeTabId}
+                                onSelectFile={handleSelectFile}
+                                onCreateFile={handleCreateFile}
+                                onCreateFolder={handleCreateFolder}
+                                onRename={handleRenameFile}
+                                onDelete={handleDeleteFile}
+                            />
+                        </div>
+
+                        {/* Drag Handle */}
+                        <div
+                            onMouseDown={() => setIsResizingExplorer(true)}
+                            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/40 transition-colors"
+                        />
+                    </aside>
+                )}
+
+                {/* Editor & Terminal Panel Center */}
+                <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+                    {/* File Tabs Row with dirty dot */}
+                    <div className="h-9 bg-surface border-b border-border-dim flex items-center px-1 overflow-x-auto custom-scrollbar shrink-0">
+                        {openTabs.map(tab => {
+                            const isActive = tab.id === activeTabId;
+                            const isDirty = dirtyTabs.has(tab.id);
+
+                            return (
+                                <div
+                                    key={tab.id}
+                                    onClick={() => setActiveTabId(tab.id)}
+                                    className={`group flex items-center gap-2 h-7 px-3 text-xs rounded-[8px] cursor-pointer transition select-none mr-1 ${
+                                        isActive
+                                            ? 'bg-canvas text-text-main font-medium border border-border-dim'
+                                            : 'text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6'
+                                    }`}
+                                >
+                                    <span className="truncate max-w-[120px]">{tab.name}</span>
+
+                                    {/* Dirty Dot */}
+                                    {isDirty && (
+                                        <span
+                                            className="w-1.5 h-1.5 rounded-full bg-accent shrink-0"
+                                            title="Unsaved changes"
+                                        />
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={(e) => handleCloseTab(tab.id, e)}
+                                        className="opacity-0 group-hover:opacity-100 hover:text-semantic-danger transition p-0.5"
+                                        title="Close tab"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Monaco Editor Container */}
+                    <div className="flex-1 relative overflow-hidden bg-canvas">
+                        {activeFile ? (
+                            <CodeEditor
+                                value={currentContent}
+                                onChange={handleContentChange}
+                                language={currentLanguage}
+                                onCursorChange={setCursorPos}
+                                onSaveShortcut={handleSave}
+                            />
+                        ) : (
+                            <div className="flex h-full items-center justify-center text-xs text-text-dim">
+                                Select or create a file in the explorer to start editing.
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Bottom Terminal / Output Panel (Collapsible) */}
+                    {showOutput && (
+                        <div
+                            style={{ height: `${outputHeight}px` }}
+                            className="border-t border-border-dim bg-surface flex flex-col shrink-0 relative"
+                        >
+                            <div className="h-8 px-3 border-b border-border-dim flex items-center justify-between text-xs text-text-sub select-none">
+                                <div className="flex items-center gap-2 font-medium">
+                                    <Terminal size={14} className="text-accent" />
+                                    <span>Output</span>
+                                    {executionOutput && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                                            executionOutput.exitCode === 0
+                                                ? 'bg-semantic-success/15 text-semantic-success'
+                                                : 'bg-semantic-danger/15 text-semantic-danger'
+                                        }`}>
+                                            exit: {executionOutput.exitCode ?? 0}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setExecutionOutput(null)}
+                                        className="text-[11px] text-text-dim hover:text-text-main transition"
+                                    >
+                                        Clear
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOutput(false)}
+                                        className="text-text-dim hover:text-text-main p-1 transition"
+                                        title="Close terminal"
+                                    >
+                                        <X size={13} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div
+                                ref={outputRef}
+                                className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-canvas text-text-main select-text"
+                            >
+                                {running ? (
+                                    <div className="flex items-center gap-2 text-text-sub">
+                                        <Loader2 size={13} className="animate-spin text-accent" />
+                                        <span>Compiling and running code...</span>
+                                    </div>
+                                ) : executionOutput ? (
+                                    <div className="space-y-1.5 whitespace-pre-wrap">
+                                        {executionOutput.command && (
+                                            <div className="text-text-dim text-[11px]">$ {executionOutput.command}</div>
+                                        )}
+                                        {executionOutput.stdout && (
+                                            <div className="text-text-main">{executionOutput.stdout}</div>
+                                        )}
+                                        {executionOutput.stderr && (
+                                            <div className="text-semantic-danger">{executionOutput.stderr}</div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="text-text-dim text-[11px]">
+                                        Terminal ready. Click 'Run' to execute.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 24px Status Bar */}
+                    <footer className="h-6 shrink-0 bg-subtle border-t border-border-dim px-3 flex items-center justify-between text-[11px] text-text-dim select-none">
+                        <div className="flex items-center gap-3">
+                            <span className="font-medium text-text-sub uppercase">{currentLanguage}</span>
+                            <span>UTF-8</span>
+                            {showOutput ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowOutput(false)}
+                                    className="hover:text-text-main transition"
+                                >
+                                    Hide Output
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowOutput(true)}
+                                    className="hover:text-text-main transition"
+                                >
+                                    Show Output
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-3 font-mono">
+                            <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
+                            <span>
+                                {dirtyTabs.has(activeTabId) ? (
+                                    <span className="text-semantic-warning">○ Unsaved changes</span>
+                                ) : (
+                                    <span className="text-accent">● Saved</span>
+                                )}
+                            </span>
+                        </div>
+                    </footer>
+                </div>
+            </div>
+
+            {/* Create File / Folder Modal */}
             {fileFormOpen && (
-                <div className="bg-surface border-b border-border-dim px-4 py-3 shrink-0 animate-fade-in">
-                    <form onSubmit={handleCreateSubmit} className="flex items-center gap-3">
-                        <span className="text-[11px] text-text-sub">New {fileFormType}:</span>
+                <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+                    <form
+                        onSubmit={handleCreateSubmit}
+                        className="card-signature p-6 w-full max-w-sm space-y-4"
+                    >
+                        <h3 className="text-sm font-semibold text-text-main">
+                            Create New {fileFormType === 'folder' ? 'Folder' : 'File'}
+                        </h3>
                         <input
                             autoFocus
                             value={newItemName}
                             onChange={e => setNewItemName(e.target.value)}
-                            placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.ext'}
-                            className="flex-1 bg-canvas border border-border-dim rounded px-3 py-1.5 text-xs text-text-main outline-none focus:border-brand-500 font-mono"
+                            placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.java'}
+                            className="w-full h-10 px-3 rounded-[10px] bg-black/[.03] dark:bg-white/5 border border-border-dim text-xs text-text-main focus:outline-none focus:border-accent"
                         />
-                        <button type="submit" disabled={creating || !newItemName.trim()} className="btn-editor-primary">
-                            {creating ? 'Creating…' : 'Create'}
-                        </button>
-                        <button type="button" onClick={() => setFileFormOpen(false)} className="btn-editor">
-                            Cancel
-                        </button>
-                    </form>
-                    {createError && <p className="text-[11px] text-rose-400 mt-1 ml-14">{createError}</p>}
-                </div>
-            )}
-
-            {/* Main content */}
-            <div className="flex flex-1 min-h-0">
-                {/* File tree */}
-                <div className="w-60 shrink-0 border-r border-border-dim">
-                    <FileTree
-                        tree={tree}
-                        currentFileId={activeTabId}
-                        onSelectFile={handleSelectFile}
-                        onCreateFile={handleCreateFile}
-                        onCreateFolder={handleCreateFolder}
-                        onRename={handleRename}
-                        onDelete={handleDelete}
-                    />
-                </div>
-
-                {/* Editor area */}
-                <div className="flex flex-1 flex-col min-w-0">
-                    {openTabs.length > 0 && (
-                        <div className="flex bg-subtle border-b border-border-dim overflow-x-auto shrink-0 custom-scrollbar">
-                            {openTabs.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTabId(tab.id)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] border-r border-border-dim shrink-0 transition-colors ${tab.id === activeTabId
-                                        ? 'bg-canvas text-text-main border-b-2 border-b-accent'
-                                        : 'text-text-sub hover:text-text-main hover:bg-subtle'
-                                        }`}
-                                >
-                                    {dirtyTabs.has(tab.id) && (
-                                        <Circle size={6} className="text-amber-400 fill-amber-400" />
-                                    )}
-                                    <span>{tab.name}</span>
-                                    <span
-                                        onClick={(e) => handleCloseTab(tab.id, e)}
-                                        className="ml-1 p-0.5 rounded hover:bg-subtle text-text-dim hover:text-text-main"
-                                    >
-                                        <X size={10} />
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="flex-1 min-h-0 flex flex-col">
-                        <div className={`${showOutput ? 'flex-1 min-h-0' : 'flex-1'}`} style={showOutput ? { flex: '1 1 60%' } : {}}>
-                            {activeTabId ? (
-                                <CodeEditor
-                                    language={currentLanguage}
-                                    value={currentContent}
-                                    onChange={handleContentChange}
-                                />
-                            ) : (
-                                <div className="flex h-full items-center justify-center text-xs text-text-dim">
-                                    <div className="text-center space-y-2">
-                                        <p>Select a file to begin editing</p>
-                                        <p className="text-[10px] text-text-dim">or create a new file with the + button</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Output Terminal Panel */}
-                        {showOutput && (
-                            <div className="border-t border-border-dim flex flex-col" style={{ flex: '0 0 40%', minHeight: '120px', maxHeight: '50%' }}>
-                                <div className="flex items-center justify-between bg-surface px-3 py-1.5 border-b border-border-dim shrink-0">
-                                    <div className="flex items-center gap-2 text-[11px]">
-                                        <Terminal size={13} className="text-emerald-400" />
-                                        <span className="font-medium text-text-main">Terminal</span>
-                                        {executionOutput && !executionOutput.phase && (
-                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${executionOutput.exitCode === 0
-                                                ? 'bg-emerald-500/10 text-emerald-400'
-                                                : 'bg-rose-500/10 text-rose-400'
-                                                }`}>
-                                                exit: {executionOutput.exitCode}
-                                            </span>
-                                        )}
-                                        {executionOutput?.language && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-subtle text-text-sub">
-                                                {executionOutput.language === 'Java' ? '☕' : executionOutput.language === 'Python' ? '🐍' : '▶'}{' '}
-                                                {executionOutput.language} {executionOutput.version}
-                                            </span>
-                                        )}
-                                        {executionOutput?.fileCount > 1 && (
-                                            <span className="text-[9px] text-text-dim">
-                                                {executionOutput.fileCount} files
-                                            </span>
-                                        )}
-                                        {executionOutput?.executionTime != null && (
-                                            <span className="text-[9px] text-text-dim">
-                                                ⏱ {executionOutput.executionTime}ms
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            onClick={() => setExecutionOutput(null)}
-                                            className="text-text-dim hover:text-text-main p-1 rounded hover:bg-subtle text-[10px]"
-                                            title="Clear output"
-                                        >
-                                            Clear
-                                        </button>
-                                        <button
-                                            onClick={() => setShowOutput(false)}
-                                            className="text-text-dim hover:text-text-main p-1 rounded hover:bg-subtle"
-                                            title="Close panel"
-                                        >
-                                            <X size={13} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div
-                                    ref={outputRef}
-                                    className="flex-1 overflow-y-auto custom-scrollbar p-3 font-mono text-xs bg-canvas"
-                                >
-                                    {running && executionOutput?.phase === 'compiling' ? (
-                                        <div className="space-y-2">
-                                            <div className="text-text-dim text-[10px]">
-                                                $ {executionOutput.command}
-                                            </div>
-                                            <div className="flex items-center gap-2 text-text-sub">
-                                                <Loader2 size={14} className="animate-spin text-amber-400" />
-                                                <span>{executionOutput.language === 'Java' ? 'Compiling' : 'Running'} {executionOutput.fileCount} file{executionOutput.fileCount !== 1 ? 's' : ''}…</span>
-                                            </div>
-                                        </div>
-                                    ) : running ? (
-                                        <div className="flex items-center gap-2 text-text-sub">
-                                            <Loader2 size={14} className="animate-spin text-brand-400" />
-                                            <span>Executing…</span>
-                                        </div>
-                                    ) : executionOutput && !executionOutput.phase ? (
-                                        <div className="space-y-1">
-                                            {/* Command line */}
-                                            {executionOutput.command && (
-                                                <div className="text-text-dim text-[10px] pb-1 border-b border-border-dim mb-2">
-                                                    <span className="text-emerald-500">$</span> {executionOutput.command}
-                                                </div>
-                                            )}
-                                            {/* Stdout */}
-                                            {executionOutput.stdout && (
-                                                <pre className="text-emerald-300 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stdout}</pre>
-                                            )}
-                                            {/* Stderr / compile errors */}
-                                            {executionOutput.stderr && (
-                                                <pre className="text-rose-400 whitespace-pre-wrap break-words leading-relaxed">{executionOutput.stderr}</pre>
-                                            )}
-                                            {!executionOutput.stdout && !executionOutput.stderr && (
-                                                <span className="text-text-dim italic">Program exited with no output</span>
-                                            )}
-                                            {/* Return prompt */}
-                                            <div className="text-text-dim text-[10px] pt-2 mt-2 border-t border-border-dim">
-                                                <span className="text-emerald-600">$</span> _
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1">
-                                            <span className="text-text-dim">Welcome to CollabSpace Terminal</span>
-                                            <div className="text-text-dim text-[10px]">Click ▶ Run to execute the current project</div>
-                                            <div className="text-text-dim text-[10px] mt-2">
-                                                <span className="text-emerald-600">$</span> _
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                {/* STDIN input area */}
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-surface border-t border-border-dim shrink-0">
-                                    <span className="text-[10px] text-text-dim shrink-0">stdin:</span>
-                                    <input
-                                        type="text"
-                                        value={stdinValue}
-                                        onChange={e => setStdinValue(e.target.value)}
-                                        placeholder="Enter program input (optional)"
-                                        className="flex-1 bg-canvas border border-border-dim rounded px-2 py-1 text-[11px] text-text-main font-mono outline-none focus:border-emerald-600 placeholder:text-text-dim"
-                                    />
-                                </div>
-                            </div>
+                        {createError && (
+                            <p className="text-xs text-semantic-danger">{createError}</p>
                         )}
-                    </div>
-                </div>
-
-                {/* Commit history sidebar */}
-                {commitsOpen && (
-                    <div className="w-80 shrink-0 border-l border-border-dim bg-surface flex flex-col">
-                        <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-dim">
-                            <div className="flex items-center gap-2">
-                                <History size={14} className="text-brand-400" />
-                                <span className="text-[12px] font-semibold text-text-main">Commit History</span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
-                                    {commits.length}
-                                </span>
-                            </div>
-                            <button onClick={() => setCommitsOpen(false)} className="text-text-dim hover:text-text-main p-1 rounded hover:bg-subtle">
-                                <X size={14} />
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setFileFormOpen(false)}
+                                className="px-3 py-1.5 rounded-[10px] text-xs text-text-sub hover:bg-black/5 dark:hover:bg-white/6"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={creating || !newItemName.trim()}
+                                className="px-3.5 py-1.5 rounded-[10px] bg-accent text-on-accent text-xs font-semibold hover:brightness-105 disabled:opacity-50"
+                            >
+                                {creating ? 'Creating...' : 'Create'}
                             </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {commits.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                                    <GitCommit size={28} className="text-text-dim mb-3" />
-                                    <p className="text-[12px] text-text-dim">No commits yet</p>
-                                    <p className="text-[10px] text-text-dim mt-1">Save your work to create the first commit</p>
-                                </div>
-                            ) : (
-                                <div className="relative">
-                                    {/* Timeline line */}
-                                    <div className="absolute left-[19px] top-0 bottom-0 w-px bg-subtle" />
-
-                                    {commits.map((c, idx) => {
-                                        const isExpanded = expandedCommitId === c.id;
-                                        const isRestoring = restoringCommitId === c.id;
-                                        const fileCount = c.snapshot ? Object.keys(c.snapshot).length : 0;
-                                        const isAutoSave = c.message?.startsWith('Auto save:');
-
-                                        return (
-                                            <div key={c.id} className="relative">
-                                                {/* Timeline dot */}
-                                                <div className="absolute left-[15px] top-[18px] z-10">
-                                                    <div className={`w-[9px] h-[9px] rounded-full border-2 ${idx === 0
-                                                        ? 'bg-brand-500 border-brand-400'
-                                                        : isAutoSave
-                                                            ? 'bg-subtle border-border-dim'
-                                                            : 'bg-subtle border-border-dim'
-                                                        }`} />
-                                                </div>
-
-                                                <div
-                                                    className={`ml-10 mr-2 my-1 p-2.5 rounded-lg border transition-all cursor-pointer ${isExpanded
-                                                        ? 'bg-surface border-brand-500/30'
-                                                        : 'bg-subtle border-border-dim hover:border-border-dim hover:bg-subtle'
-                                                        }`}
-                                                    onClick={async () => {
-                                                        if (isExpanded) {
-                                                            setExpandedCommitId(null);
-                                                            setCommitFilesList([]);
-                                                            return;
-                                                        }
-                                                        setExpandedCommitId(c.id);
-                                                        setCommitFilesLoading(true);
-                                                        try {
-                                                            const files = await getCommitFiles(c.id);
-                                                            setCommitFilesList(files);
-                                                        } catch {
-                                                            setCommitFilesList([]);
-                                                        }
-                                                        setCommitFilesLoading(false);
-                                                    }}
-                                                >
-                                                    {/* Commit header */}
-                                                    <div className="flex items-start gap-2">
-                                                        <ChevronRight
-                                                            size={12}
-                                                            className={`text-text-dim mt-0.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''
-                                                                }`}
-                                                        />
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className={`text-[12px] leading-snug break-words ${isAutoSave ? 'text-text-sub italic' : 'text-text-main font-medium'
-                                                                }`}>
-                                                                {c.message}
-                                                            </p>
-                                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                                {c.author_name && (
-                                                                    <span className="flex items-center gap-1 text-[10px] text-text-dim">
-                                                                        <User size={9} /> {c.author_name}
-                                                                    </span>
-                                                                )}
-                                                                <span className="text-[10px] text-text-dim">
-                                                                    {new Date(c.created_at).toLocaleDateString()} {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                </span>
-                                                                {fileCount > 0 && (
-                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-subtle text-text-dim">
-                                                                        {fileCount} file{fileCount !== 1 ? 's' : ''}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Expanded: file list + restore */}
-                                                    {isExpanded && (
-                                                        <div className="mt-3 pt-2.5 border-t border-border-dim space-y-2 animate-fade-in" onClick={e => e.stopPropagation()}>
-                                                            {/* Files in this commit */}
-                                                            {commitFilesLoading ? (
-                                                                <div className="flex items-center gap-2 text-[10px] text-text-dim py-1">
-                                                                    <Loader2 size={10} className="animate-spin" /> Loading files…
-                                                                </div>
-                                                            ) : commitFilesList.length > 0 ? (
-                                                                <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
-                                                                    {commitFilesList.map(cf => (
-                                                                        <div key={cf.id || cf.file_id} className="flex items-center gap-2 text-[10px] text-text-sub py-0.5 px-1 rounded hover:bg-subtle/50">
-                                                                            <FileCode size={10} className="text-text-dim shrink-0" />
-                                                                            <span className="truncate">{cf.file_path || cf.file_name}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                <p className="text-[10px] text-text-dim italic">No file details available</p>
-                                                            )}
-
-                                                            {/* Restore button */}
-                                                            <button
-                                                                disabled={isRestoring}
-                                                                onClick={async (e) => {
-                                                                    e.stopPropagation();
-                                                                    if (!window.confirm(`Restore all files to this commit?\n\n"${c.message}"\n\nThis will overwrite current file contents.`)) return;
-                                                                    setRestoringCommitId(c.id);
-                                                                    try {
-                                                                        const updatedFiles = await restoreCommitSnapshot({
-                                                                            commitId: c.id,
-                                                                            repositoryId: repoId,
-                                                                            actorId: user?.id || null,
-                                                                        });
-                                                                        // Refresh files state
-                                                                        setFiles(prev => prev.map(f => {
-                                                                            const updated = updatedFiles.find(u => u.id === f.id);
-                                                                            return updated || f;
-                                                                        }));
-                                                                        // Clear tab contents so they reload from fresh data
-                                                                        setTabContents(prev => {
-                                                                            const next = { ...prev };
-                                                                            updatedFiles.forEach(u => {
-                                                                                if (next[u.id] !== undefined) {
-                                                                                    next[u.id] = u.content ?? '';
-                                                                                }
-                                                                            });
-                                                                            return next;
-                                                                        });
-                                                                        setDirtyTabs(new Set());
-                                                                    } catch (err) {
-                                                                        setError(err.message || 'Restore failed');
-                                                                    }
-                                                                    setRestoringCommitId(null);
-                                                                }}
-                                                                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 transition-colors disabled:opacity-50"
-                                                            >
-                                                                {isRestoring ? (
-                                                                    <><Loader2 size={10} className="animate-spin" /> Restoring…</>
-                                                                ) : (
-                                                                    <><RotateCcw size={10} /> Restore this version</>
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
+                    </form>
+                </div>
+            )}
         </div>
     );
 }

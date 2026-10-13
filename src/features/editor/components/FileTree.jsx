@@ -204,45 +204,24 @@ export default function FileTree({
     const items = tree ?? [];
 
     return (
-        <div className="flex h-full flex-col rounded-[10px] border border-border-dim bg-surface text-xs overflow-hidden">
-            <div className="border-b border-border-dim bg-subtle px-3 py-2 text-xs font-medium text-text-main flex items-center justify-between">
-                <span>Explorer</span>
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={() => onCreateFile?.(null)}
-                        className="p-1 hover:bg-surface rounded text-text-sub hover:text-text-main transition-colors"
-                        title="New File"
-                    >
-                        <Plus size={13} />
-                    </button>
-                    <button
-                        onClick={() => onCreateFolder?.(null)}
-                        className="p-1 hover:bg-surface rounded text-text-sub hover:text-text-main transition-colors"
-                        title="New Folder"
-                    >
-                        <FolderPlus size={13} />
-                    </button>
-                </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-1.5 text-xs text-text-sub custom-scrollbar">
-                {items.length === 0 ? (
-                    <div className="px-2 py-4 text-text-dim text-center text-xs">No files yet. Create one above.</div>
-                ) : (
-                    items.map(node => (
-                        <TreeNode
-                            key={node.id}
-                            node={node}
-                            depth={0}
-                            currentFileId={currentFileId}
-                            onSelectFile={onSelectFile}
-                            onCreateFile={onCreateFile}
-                            onCreateFolder={onCreateFolder}
-                            onRename={onRename}
-                            onDelete={onDelete}
-                        />
-                    ))
-                )}
-            </div>
+        <div className="flex-1 overflow-y-auto p-1 text-xs text-text-sub custom-scrollbar">
+            {items.length === 0 ? (
+                <div className="px-2 py-8 text-text-dim text-center text-xs">No files yet. Create one above.</div>
+            ) : (
+                items.map(node => (
+                    <TreeNode
+                        key={node.id}
+                        node={node}
+                        depth={0}
+                        currentFileId={currentFileId}
+                        onSelectFile={onSelectFile}
+                        onCreateFile={onCreateFile}
+                        onCreateFolder={onCreateFolder}
+                        onRename={onRename}
+                        onDelete={onDelete}
+                    />
+                ))
+            )}
         </div>
     );
 }
