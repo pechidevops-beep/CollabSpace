@@ -1,8 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import RepositoryCard from '../components/RepositoryCard';
 import PageTransition from '../../../components/shared/PageTransition';
+import Button from '../../../components/ui/Button';
+import Input from '../../../components/ui/Input';
+import EmptyState from '../../../components/ui/EmptyState';
+import Skeleton from '../../../components/ui/Skeleton';
 import { createRepository, getRepositories } from '../../../services/repositoryService';
 import {
     getWorkspaceById,
@@ -11,18 +15,16 @@ import {
     updateMemberRole,
     removeMember,
 } from '../../../services/workspaceService';
-import { usePermissions, AVAILABLE_ROLES } from '../../../hooks/usePermissions';
-import { gsap } from 'gsap';
+import { AVAILABLE_ROLES } from '../../../hooks/usePermissions';
 import {
-    Plus, Users, Settings, BookOpen, Copy, Check,
-    FolderGit2, X, UserPlus, Mail, Shield, Trash2,
+    Plus, Users, BookOpen, Copy, Check,
+    FolderGit2, X, UserPlus, Mail, Trash2,
 } from 'lucide-react';
 
 export default function WorkspacePage() {
     const { workspaceId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const mainRef = useRef(null);
 
     const [workspace, setWorkspace] = useState(null);
     const [repositories, setRepositories] = useState([]);
@@ -71,14 +73,6 @@ export default function WorkspacePage() {
         };
         load();
     }, [workspaceId, user?.id]);
-
-    useEffect(() => {
-        if (loading || !mainRef.current) return;
-        const ctx = gsap.context(() => {
-            gsap.from('.workspace-section', { y: 20, opacity: 0, duration: 0.5, stagger: 0.1, ease: 'power2.out' });
-        }, mainRef);
-        return () => ctx.revert();
-    }, [loading]);
 
     const handleCreateRepo = async (e) => {
         e.preventDefault();
@@ -137,14 +131,19 @@ export default function WorkspacePage() {
     const isOwner = workspace?.owner_id === user?.id;
     const canManage = ['owner', 'admin'].includes(currentRole);
     const canCreateRepo = ['owner', 'admin', 'contributor'].includes(currentRole);
-    const isViewer = currentRole === 'viewer';
 
     if (loading) {
         return (
-            <div className="flex h-[70vh] items-center justify-center text-sm text-slate-500">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                    Loading workspace…
+            <div className="space-y-6 py-4 animate-fade-up">
+                <div className="flex justify-between items-center">
+                    <Skeleton className="h-8 w-48 rounded-md" />
+                    <Skeleton className="h-9 w-28 rounded-md" />
+                </div>
+                <Skeleton className="h-24 w-full rounded-[14px]" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <Skeleton className="h-36 rounded-[14px]" />
+                    <Skeleton className="h-36 rounded-[14px]" />
+                    <Skeleton className="h-36 rounded-[14px]" />
                 </div>
             </div>
         );
@@ -152,7 +151,7 @@ export default function WorkspacePage() {
 
     if (!workspace) {
         return (
-            <div className="flex h-[70vh] items-center justify-center text-sm text-slate-500">
+            <div className="flex h-[60vh] items-center justify-center text-xs text-text-sub">
                 Workspace not found.
             </div>
         );
@@ -160,88 +159,118 @@ export default function WorkspacePage() {
 
     return (
         <PageTransition>
-            <div ref={mainRef} className="space-y-8 pb-8">
+            <div className="space-y-8 pb-8 animate-fade-up">
                 {/* Header */}
-                <header className="workspace-section flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight">{workspace.name}</h1>
-                        <p className="text-sm text-slate-400 mt-1">
+                        <h1 className="text-xl sm:text-2xl font-semibold text-text-main tracking-tight">
+                            {workspace.name}
+                        </h1>
+                        <p className="text-xs text-text-sub mt-1">
                             {workspace.type === 'personal' ? 'Personal workspace' : 'Team workspace'} ·{' '}
                             {members.length} member{members.length !== 1 ? 's' : ''} · {repositories.length} repo{repositories.length !== 1 ? 's' : ''}
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Link
-                            to={`/app/workspace/${workspaceId}/assessments`}
-                            className="btn btn-secondary text-xs"
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={BookOpen}
+                            onClick={() => navigate(`/app/workspace/${workspaceId}/assessments`)}
                         >
-                            <BookOpen size={14} /> Assessments
-                        </Link>
+                            Assessments
+                        </Button>
                         {canCreateRepo && (
-                            <button onClick={() => setRepoFormOpen(p => !p)} className="btn btn-primary text-xs">
-                                <Plus size={16} /> New Repo
-                            </button>
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                icon={Plus}
+                                onClick={() => setRepoFormOpen(p => !p)}
+                            >
+                                New Repo
+                            </Button>
                         )}
                     </div>
                 </header>
 
-                {error && <div className="glass-panel text-rose-400 text-xs rounded-lg p-3">{error}</div>}
+                {error && (
+                    <div className="p-3.5 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger text-xs">
+                        {error}
+                    </div>
+                )}
 
                 {/* Join Code */}
                 {workspace.join_code && (
-                    <div className="workspace-section glass-panel p-4 rounded-xl flex items-center justify-between">
+                    <div className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle flex items-center justify-between">
                         <div>
-                            <p className="text-xs text-slate-400 mb-1">Join Code</p>
-                            <p className="text-lg font-mono font-bold text-white tracking-wider">{workspace.join_code}</p>
+                            <p className="text-[11px] font-medium text-text-sub uppercase tracking-wider mb-1">
+                                Join Code
+                            </p>
+                            <p className="text-base sm:text-lg font-mono font-bold text-text-main tracking-wider">
+                                {workspace.join_code}
+                            </p>
                         </div>
-                        <button onClick={handleCopyCode} className="btn btn-secondary text-xs">
-                            {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
-                        </button>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={copied ? Check : Copy}
+                            onClick={handleCopyCode}
+                        >
+                            {copied ? 'Copied' : 'Copy'}
+                        </Button>
                     </div>
                 )}
 
                 {/* Create Repo Form */}
                 {repoFormOpen && (
-                    <div className="workspace-section glass-panel p-5 rounded-xl space-y-4 animate-fade-in">
+                    <div className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4 animate-fade-in">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-semibold text-white">Create Repository</h2>
-                            <button onClick={() => setRepoFormOpen(false)} className="text-slate-500 hover:text-slate-300">
+                            <h2 className="text-sm font-semibold text-text-main">Create Repository</h2>
+                            <button
+                                type="button"
+                                onClick={() => setRepoFormOpen(false)}
+                                className="text-text-dim hover:text-text-main p-1 transition-colors"
+                            >
                                 <X size={16} />
                             </button>
                         </div>
                         <form onSubmit={handleCreateRepo} className="space-y-3">
-                            <input
+                            <Input
                                 autoFocus
                                 value={repoName}
                                 onChange={e => setRepoName(e.target.value)}
                                 placeholder="Repository name"
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500"
+                                label="Repository Name"
+                                required
                             />
-                            <textarea
-                                value={repoDesc}
-                                onChange={e => setRepoDesc(e.target.value)}
-                                placeholder="Description (optional)"
-                                rows={2}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500 resize-none"
-                            />
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-xs font-medium text-text-main">Description (optional)</label>
+                                <textarea
+                                    value={repoDesc}
+                                    onChange={e => setRepoDesc(e.target.value)}
+                                    placeholder="Brief description of this repository"
+                                    rows={2}
+                                    className="w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
+                                />
+                            </div>
                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-[11px] text-slate-400 mb-1">Visibility</label>
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-medium text-text-main">Visibility</label>
                                     <select
                                         value={repoVisibility}
                                         onChange={e => setRepoVisibility(e.target.value)}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-brand-500"
+                                        className="h-9 w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                     >
                                         <option value="public">Public</option>
                                         <option value="private">Private</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="block text-[11px] text-slate-400 mb-1">Language</label>
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-xs font-medium text-text-main">Language</label>
                                     <select
                                         value={repoLanguage}
                                         onChange={e => setRepoLanguage(e.target.value)}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-brand-500"
+                                        className="h-9 w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                     >
                                         <option value="">None</option>
                                         <option value="JavaScript">JavaScript</option>
@@ -257,28 +286,46 @@ export default function WorkspacePage() {
                                     </select>
                                 </div>
                             </div>
-                            <div className="flex gap-2 justify-end">
-                                <button type="button" onClick={() => setRepoFormOpen(false)} className="btn btn-secondary text-xs">Cancel</button>
-                                <button type="submit" disabled={creatingRepo || !repoName.trim()} className="btn btn-primary text-xs">
+                            <div className="flex gap-2 justify-end pt-2">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setRepoFormOpen(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    size="sm"
+                                    loading={creatingRepo}
+                                    disabled={creatingRepo || !repoName.trim()}
+                                >
                                     {creatingRepo ? 'Creating…' : 'Create'}
-                                </button>
+                                </Button>
                             </div>
                         </form>
                     </div>
                 )}
 
                 {/* Repositories Grid */}
-                <section className="workspace-section">
+                <section>
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                            <FolderGit2 size={16} className="text-brand-400" />
+                        <h2 className="text-sm font-semibold text-text-main flex items-center gap-2">
+                            <FolderGit2 size={16} className="text-accent" />
                             Repositories ({repositories.length})
                         </h2>
                     </div>
                     {repositories.length === 0 ? (
-                        <div className="glass-panel p-10 rounded-xl text-center text-sm text-slate-500">
-                            No repositories yet. {isOwner ? 'Create one above to get started.' : ''}
-                        </div>
+                        <EmptyState
+                            icon={FolderGit2}
+                            title="No repositories yet"
+                            description={isOwner ? "Create a repository to store code and collaborate." : "No repositories have been created in this workspace yet."}
+                            actionLabel={canCreateRepo ? "Create Repository" : undefined}
+                            actionIcon={Plus}
+                            onAction={canCreateRepo ? () => setRepoFormOpen(true) : undefined}
+                        />
                     ) : (
                         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                             {repositories.map(repo => (
@@ -289,39 +336,54 @@ export default function WorkspacePage() {
                 </section>
 
                 {/* Members */}
-                <section className="workspace-section">
+                <section>
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                            <Users size={16} className="text-brand-400" />
+                        <h2 className="text-sm font-semibold text-text-main flex items-center gap-2">
+                            <Users size={16} className="text-accent" />
                             Members ({members.length})
                         </h2>
                         {canManage && (
-                            <button onClick={() => setInviteOpen(p => !p)} className="btn btn-secondary text-xs">
-                                <UserPlus size={14} /> Invite
-                            </button>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={UserPlus}
+                                onClick={() => setInviteOpen(p => !p)}
+                            >
+                                Invite
+                            </Button>
                         )}
                     </div>
 
                     {inviteOpen && (
-                        <form onSubmit={handleInvite} className="glass-panel p-4 rounded-lg mb-4 flex items-center gap-3 animate-fade-in">
-                            <Mail size={14} className="text-slate-400 shrink-0" />
+                        <form onSubmit={handleInvite} className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle mb-4 flex items-center gap-3 animate-fade-in">
+                            <Mail size={15} className="text-text-dim shrink-0" />
                             <input
                                 autoFocus
                                 value={inviteEmail}
                                 onChange={e => setInviteEmail(e.target.value)}
                                 placeholder="Enter user email to invite"
-                                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-brand-500"
+                                className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                             />
-                            <button type="submit" disabled={inviting || !inviteEmail.trim()} className="btn btn-primary text-xs">
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                size="sm"
+                                loading={inviting}
+                                disabled={inviting || !inviteEmail.trim()}
+                            >
                                 {inviting ? 'Inviting…' : 'Invite'}
-                            </button>
-                            <button type="button" onClick={() => setInviteOpen(false)} className="btn btn-ghost text-xs">
-                                <X size={14} />
+                            </Button>
+                            <button
+                                type="button"
+                                onClick={() => setInviteOpen(false)}
+                                className="text-text-dim hover:text-text-main p-1 transition-colors"
+                            >
+                                <X size={15} />
                             </button>
                         </form>
                     )}
 
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                         {members.map(m => {
                             const isSelf = m.user_id === user?.id;
                             const isMemberOwner = m.role === 'owner';
@@ -329,24 +391,24 @@ export default function WorkspacePage() {
                             const canRemove = canManage && !isMemberOwner && !isSelf;
 
                             const roleBadgeClass = {
-                                owner: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                                owner: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
                                 admin: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
-                                contributor: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-                                viewer: 'text-slate-400 bg-slate-800/50 border-slate-700',
-                            }[m.role] || 'text-slate-400 bg-slate-800/50 border-slate-700';
+                                contributor: 'text-accent bg-accent/10 border-accent/20',
+                                viewer: 'text-text-dim bg-subtle border-border-dim',
+                            }[m.role] || 'text-text-dim bg-subtle border-border-dim';
 
                             return (
-                                <div key={m.id} className="glass-panel p-3 rounded-lg flex items-center justify-between group hover:border-white/10 transition-colors">
+                                <div key={m.id} className="p-3.5 rounded-[10px] bg-surface border border-border-dim flex items-center justify-between group hover:border-border-strong transition-colors">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-600/30 to-purple-600/30 flex items-center justify-center text-[11px] font-semibold text-white border border-white/10">
+                                        <div className="w-8 h-8 rounded-full bg-subtle border border-border-dim flex items-center justify-center text-[11px] font-semibold text-text-main">
                                             {(m.profiles?.full_name || m.profiles?.email || '?')[0].toUpperCase()}
                                         </div>
                                         <div>
-                                            <p className="text-xs font-medium text-white">
+                                            <p className="text-xs font-medium text-text-main">
                                                 {m.profiles?.full_name || 'Unknown'}
-                                                {isSelf && <span className="text-[10px] text-slate-500 ml-1">(you)</span>}
+                                                {isSelf && <span className="text-[10px] text-text-dim ml-1">(you)</span>}
                                             </p>
-                                            <p className="text-[10px] text-slate-500">{m.profiles?.email || ''}</p>
+                                            <p className="text-[11px] text-text-dim">{m.profiles?.email || ''}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -369,19 +431,20 @@ export default function WorkspacePage() {
                                                         setError(err.message);
                                                     }
                                                 }}
-                                                className="text-[10px] bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-slate-300 outline-none focus:border-brand-500 cursor-pointer"
+                                                className="text-[11px] bg-subtle border border-border-dim rounded-md px-2 py-1 text-text-main outline-none focus:border-brand cursor-pointer"
                                             >
                                                 {AVAILABLE_ROLES.filter(r => r.value !== 'owner').map(r => (
                                                     <option key={r.value} value={r.value}>{r.label}</option>
                                                 ))}
                                             </select>
                                         ) : (
-                                            <span className={`text-[10px] px-2 py-0.5 rounded-full border ${roleBadgeClass}`}>
+                                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${roleBadgeClass}`}>
                                                 {m.role}
                                             </span>
                                         )}
                                         {canRemove && (
                                             <button
+                                                type="button"
                                                 onClick={async () => {
                                                     if (!window.confirm(`Remove ${m.profiles?.full_name || 'this member'} from the workspace?`)) return;
                                                     try {
@@ -391,10 +454,10 @@ export default function WorkspacePage() {
                                                         setError(err.message);
                                                     }
                                                 }}
-                                                className="p-1 rounded text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                                                className="p-1.5 rounded-md text-text-dim hover:text-semantic-danger hover:bg-semantic-danger/10 transition-colors opacity-0 group-hover:opacity-100"
                                                 title="Remove member"
                                             >
-                                                <Trash2 size={12} />
+                                                <Trash2 size={13} />
                                             </button>
                                         )}
                                     </div>

@@ -3,6 +3,10 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import AssignmentCard from '../components/AssignmentCard';
 import PageTransition from '../../../components/shared/PageTransition';
+import Button from '../../../components/ui/Button';
+import Input from '../../../components/ui/Input';
+import EmptyState from '../../../components/ui/EmptyState';
+import Skeleton from '../../../components/ui/Skeleton';
 import {
     createAssignment,
     getAssignments,
@@ -16,8 +20,8 @@ import { usePermissions } from '../../../hooks/usePermissions';
 
 export default function ClassroomPage() {
     const { workspaceId } = useParams();
-    const { user, profile } = useAuth();
-    const { canCreateAssignment, canGradeSubmissions, loading: permLoading } = usePermissions(workspaceId);
+    const { user } = useAuth();
+    const { canCreateAssignment } = usePermissions(workspaceId);
 
     const [workspaceOptions, setWorkspaceOptions] = useState([]);
     const [workspaceLoading, setWorkspaceLoading] = useState(false);
@@ -35,25 +39,22 @@ export default function ClassroomPage() {
     const [dueDate, setDueDate] = useState('');
     const [creating, setCreating] = useState(false);
 
-    const [isOwner, setIsOwner] = useState(false);
-
     useEffect(() => {
         if (!workspaceId || !user) return;
         const load = async () => {
             setLoading(true);
             setError('');
             try {
-                const [assignData, workspace] = await Promise.all([
+                const [assignData] = await Promise.all([
                     getAssignments(workspaceId),
                     getWorkspaceById(workspaceId),
                 ]);
-                setIsOwner(workspace?.owner_id === user.id);
-                setAssignments(assignData);
+                setAssignments(assignData ?? []);
 
                 // Fetch user's submission for each assignment
                 const subMap = {};
                 await Promise.all(
-                    assignData.map(async (a) => {
+                    (assignData ?? []).map(async (a) => {
                         try {
                             const sub = await getUserSubmission(a.id, user.id);
                             if (sub) subMap[a.id] = sub;
@@ -114,56 +115,57 @@ export default function ClassroomPage() {
     const past = assignments.filter(a => a.due_date && new Date(a.due_date) < now);
     const displayed = tab === 'active' ? active : past;
 
+    // View when no workspaceId in URL (global assessments index)
     if (!workspaceId) {
         return (
             <PageTransition>
-                <div className="space-y-6 pb-8">
+                <div className="space-y-6 pb-8 animate-fade-up">
                     <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
-                            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-                                <BookOpen size={24} className="text-brand-400" />
+                            <h1 className="text-xl sm:text-2xl font-semibold text-text-main tracking-tight flex items-center gap-2.5">
+                                <BookOpen size={22} className="text-accent" />
                                 Assessments
                             </h1>
-                            <p className="text-sm text-slate-400 mt-1">
+                            <p className="text-xs text-text-sub mt-1">
                                 Select a workspace to view assignments.
                             </p>
                         </div>
                     </header>
 
-                    <section className="glass-panel p-6 rounded-xl">
-                        <h2 className="text-sm font-semibold text-slate-200">Your workspaces</h2>
+                    <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
+                        <h2 className="text-sm font-semibold text-text-main">Your workspaces</h2>
                         {workspaceLoading && (
-                            <p className="mt-2 text-xs text-slate-500">Loading workspaces...</p>
+                            <p className="mt-2 text-xs text-text-sub">Loading workspaces...</p>
                         )}
                         {workspaceError && !workspaceLoading && (
-                            <p className="mt-2 text-xs text-rose-400">{workspaceError}</p>
+                            <p className="mt-2 text-xs text-semantic-danger">{workspaceError}</p>
                         )}
                         {!workspaceLoading && !workspaceError && workspaceOptions.length === 0 && (
-                            <p className="mt-2 text-xs text-slate-500">
+                            <p className="mt-2 text-xs text-text-sub">
                                 You are not a member of any workspaces yet.
                             </p>
                         )}
                         {!workspaceLoading && !workspaceError && workspaceOptions.length > 0 && (
-                            <ul className="mt-3 space-y-2 text-xs text-slate-300">
+                            <ul className="mt-3 space-y-2 text-xs">
                                 {workspaceOptions.map((ws) => (
                                     <li
                                         key={ws.id}
-                                        className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900/70 px-3 py-2 transition hover:border-brand-500/40 hover:bg-slate-900/90"
+                                        className="flex items-center justify-between rounded-[10px] border border-border-dim bg-subtle px-3.5 py-2.5 transition hover:border-border-strong hover:bg-surface"
                                     >
                                         <div>
                                             <Link
                                                 to={`/app/workspace/${ws.id}/assessments`}
-                                                className="text-slate-100 hover:text-brand-300"
+                                                className="text-text-main font-medium hover:text-accent transition-colors"
                                             >
                                                 {ws.name}
                                             </Link>
-                                            <div className="text-[11px] text-slate-500">
+                                            <div className="text-[11px] text-text-dim mt-0.5">
                                                 {ws.type === 'classroom'
                                                     ? 'Assessments workspace'
                                                     : 'Team workspace'}
                                             </div>
                                         </div>
-                                        <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                                        <span className="text-[11px] uppercase tracking-wide text-text-dim font-medium">
                                             {ws.role}
                                         </span>
                                     </li>
@@ -178,10 +180,20 @@ export default function ClassroomPage() {
 
     if (loading) {
         return (
-            <div className="flex h-[60vh] items-center justify-center text-sm text-slate-500">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                    Loading assessments...
+            <div className="space-y-4 py-6">
+                <div className="flex justify-between items-center">
+                    <Skeleton className="h-6 w-32 rounded-md" />
+                    <Skeleton className="h-9 w-28 rounded-md" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <Skeleton className="h-20 rounded-[14px]" />
+                    <Skeleton className="h-20 rounded-[14px]" />
+                    <Skeleton className="h-20 rounded-[14px]" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                    <Skeleton className="h-44 rounded-[14px]" />
+                    <Skeleton className="h-44 rounded-[14px]" />
+                    <Skeleton className="h-44 rounded-[14px]" />
                 </div>
             </div>
         );
@@ -189,134 +201,172 @@ export default function ClassroomPage() {
 
     return (
         <PageTransition>
-            <div className="space-y-6 pb-8">
-                <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-6 pb-8 animate-fade-up">
+                {/* Header: Note duplicate "Assessments" heading is removed. Only show action toolbar */}
+                <header className="flex items-center justify-between gap-3">
                     <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-                            <BookOpen size={24} className="text-brand-400" />
-                            Assessments
-                        </h1>
-                        <p className="text-sm text-slate-400 mt-1">
+                        <p className="text-xs text-text-sub">
                             {assignments.length} assignment{assignments.length !== 1 ? 's' : ''} total
                         </p>
                     </div>
                     {canCreateAssignment && (
-                        <button
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            icon={Plus}
                             onClick={() => setFormOpen(prev => !prev)}
-                            className="btn btn-primary text-xs self-start"
                         >
-                            <Plus size={16} /> New Assignment
-                        </button>
+                            New Assignment
+                        </Button>
                     )}
                 </header>
 
                 {error && (
-                    <div className="glass-panel text-rose-400 text-xs rounded-lg p-3">{error}</div>
+                    <div className="p-3.5 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger text-xs">
+                        {error}
+                    </div>
                 )}
 
+                {/* Create Assignment Form */}
                 {formOpen && (
-                    <form onSubmit={handleCreate} className="glass-panel p-5 rounded-xl space-y-4 animate-fade-in">
+                    <form onSubmit={handleCreate} className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4 animate-fade-in">
                         <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-semibold text-white">Create Assignment</h2>
-                            <button type="button" onClick={() => setFormOpen(false)} className="text-slate-500 hover:text-slate-300">
+                            <h2 className="text-sm font-semibold text-text-main">Create Assignment</h2>
+                            <button
+                                type="button"
+                                onClick={() => setFormOpen(false)}
+                                className="text-text-dim hover:text-text-main p-1 transition-colors"
+                            >
                                 <X size={16} />
                             </button>
                         </div>
-                        <input
+                        <Input
                             autoFocus
                             value={title}
                             onChange={e => setTitle(e.target.value)}
                             placeholder="Assignment title"
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500"
+                            label="Title"
+                            required
                         />
-                        <textarea
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            placeholder="Instructions & description (optional)"
-                            rows={3}
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-brand-500 resize-none"
-                        />
-                        <div className="flex items-center gap-3">
-                            <Calendar size={14} className="text-slate-400" />
+                        <div className="flex flex-col gap-1.5 w-full">
+                            <label className="text-xs font-medium text-text-main">
+                                Instructions & Description
+                            </label>
+                            <textarea
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="Instructions & description (optional)"
+                                rows={3}
+                                className="w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5 w-full">
+                            <label className="text-xs font-medium text-text-main flex items-center gap-1.5">
+                                <Calendar size={13} className="text-text-dim" />
+                                <span>Due Date</span>
+                            </label>
                             <input
                                 type="datetime-local"
                                 value={dueDate}
                                 onChange={e => setDueDate(e.target.value)}
-                                className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-brand-500"
+                                className="h-9 w-full sm:w-64 rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                             />
                         </div>
-                        <div className="flex gap-2 justify-end">
-                            <button type="button" onClick={() => setFormOpen(false)} className="btn btn-secondary text-xs">Cancel</button>
-                            <button type="submit" disabled={creating || !title.trim()} className="btn btn-primary text-xs">
-                                {creating ? 'Creating…' : 'Create'}
-                            </button>
+                        <div className="flex gap-2 justify-end pt-2">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setFormOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                variant="primary"
+                                size="sm"
+                                loading={creating}
+                                disabled={creating || !title.trim()}
+                            >
+                                {creating ? 'Creating…' : 'Create Assignment'}
+                            </Button>
                         </div>
                     </form>
                 )}
 
-                {/* Tabs */}
-                <div className="flex items-center gap-1 border-b border-slate-800 -mb-2">
-                    <button
-                        onClick={() => setTab('active')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'active'
-                            ? 'text-white border-brand-500'
-                            : 'text-slate-500 border-transparent hover:text-slate-300'
-                            }`}
-                    >
-                        Active <span className="ml-1 text-[10px] opacity-70">({active.length})</span>
-                    </button>
-                    <button
-                        onClick={() => setTab('past')}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'past'
-                            ? 'text-white border-brand-500'
-                            : 'text-slate-500 border-transparent hover:text-slate-300'
-                            }`}
-                    >
-                        Past <span className="ml-1 text-[10px] opacity-70">({past.length})</span>
-                    </button>
-                </div>
-
                 {/* Stat summary */}
                 <div className="grid grid-cols-3 gap-4">
                     {[
-                        { label: 'Active', value: active.length, color: 'text-emerald-400 bg-emerald-400/10' },
+                        { label: 'Active', value: active.length, color: 'text-semantic-success' },
                         {
                             label: 'Completed',
                             value: Object.values(submissions).filter(s => s.grade !== null && s.grade !== undefined).length,
-                            color: 'text-blue-400 bg-blue-400/10',
+                            color: 'text-accent',
                         },
                         {
                             label: 'Pending',
                             value: assignments.length - Object.keys(submissions).length,
-                            color: 'text-amber-400 bg-amber-400/10',
+                            color: 'text-semantic-warning',
                         },
                     ].map((s, i) => (
-                        <div key={i} className="glass-panel p-4 rounded-xl text-center">
-                            <p className="text-2xl font-bold text-white">{s.value}</p>
-                            <p className={`text-[11px] font-medium mt-1 ${s.color.split(' ')[0]}`}>{s.label}</p>
+                        <div key={i} className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                            <p className="text-2xl font-bold text-text-main tracking-tight leading-none">{s.value}</p>
+                            <p className={`text-[11px] font-medium mt-1.5 ${s.color}`}>{s.label}</p>
                         </div>
                     ))}
                 </div>
 
-                {/* Cards */}
-                {displayed.length === 0 ? (
-                    <div className="text-center py-16 text-slate-500 text-sm">
-                        No {tab} assignments.
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {displayed.map(a => (
-                            <AssignmentCard
-                                key={a.id}
-                                assignment={a}
-                                workspaceId={workspaceId}
-                                submission={submissions[a.id]}
-                            />
-                        ))}
-                    </div>
-                )}
+                {/* Tabs */}
+                <div className="flex items-center gap-1 border-b border-border-dim">
+                    <button
+                        onClick={() => setTab('active')}
+                        className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${tab === 'active'
+                            ? 'text-text-main border-accent'
+                            : 'text-text-dim border-transparent hover:text-text-sub'
+                            }`}
+                    >
+                        Active <span className="ml-1 text-[10px] opacity-75">({active.length})</span>
+                    </button>
+                    <button
+                        onClick={() => setTab('past')}
+                        className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${tab === 'past'
+                            ? 'text-text-main border-accent'
+                            : 'text-text-dim border-transparent hover:text-text-sub'
+                            }`}
+                    >
+                        Past <span className="ml-1 text-[10px] opacity-75">({past.length})</span>
+                    </button>
+                </div>
+
+                {/* Cards Container with strict 24px spacing (mt-6) from tabs */}
+                <div className="mt-6">
+                    {displayed.length === 0 ? (
+                        <EmptyState
+                            icon={BookOpen}
+                            title={`No ${tab} assignments`}
+                            description={
+                                tab === 'active'
+                                    ? 'No active assignments are currently due. Check past assignments or create a new one.'
+                                    : 'No past assignments found for this workspace.'
+                            }
+                            actionLabel={canCreateAssignment && tab === 'active' ? 'New Assignment' : undefined}
+                            actionIcon={Plus}
+                            onAction={canCreateAssignment && tab === 'active' ? () => setFormOpen(true) : undefined}
+                        />
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {displayed.map(a => (
+                                <AssignmentCard
+                                    key={a.id}
+                                    assignment={a}
+                                    workspaceId={workspaceId}
+                                    submission={submissions[a.id]}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
         </PageTransition>
     );
 }
-
