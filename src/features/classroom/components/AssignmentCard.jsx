@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, CheckCircle2, CircleDashed, AlertCircle } from 'lucide-react';
+import Card from '../../../components/ui/Card';
 
 export default function AssignmentCard({ assignment, workspaceId, submission }) {
     // Determine progress from real submission
@@ -42,7 +43,7 @@ export default function AssignmentCard({ assignment, workspaceId, submission }) 
 
     return (
         <Link to={`/app/workspace/${workspaceId}/assessments/assignment/${assignment.id}`} className="block group">
-            <div className="p-4 rounded-[14px] bg-surface border border-border-dim hover:border-border-strong hover:bg-subtle shadow-subtle transition-all duration-150 flex flex-col justify-between h-full">
+            <Card interactive={true} className="p-4 flex flex-col justify-between h-full">
                 <div>
                     <div className="flex justify-between items-start mb-3">
                         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusBg} ${statusColor} ${statusBorder}`}>
@@ -87,7 +88,7 @@ export default function AssignmentCard({ assignment, workspaceId, submission }) 
                         <span>{progress}%</span>
                     </div>
                 </div>
-            </div>
+            </Card>
         </Link>
     );
 }

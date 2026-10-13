@@ -33,10 +33,10 @@ export function ToastContainer({ toasts, onDismiss }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
               transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-              className="pointer-events-auto flex items-start gap-3 p-4 rounded-[14px] border border-border-dim bg-surface text-text-main shadow-card backdrop-blur-md"
+              className="pointer-events-auto flex items-start gap-3 p-4 rounded-2xl border border-border-dim bg-surface text-text-main shadow-card backdrop-blur-md"
               role="alert"
             >
-              <div className={`p-1.5 rounded-lg border flex-shrink-0 ${style}`}>
+              <div className={`p-1.5 rounded-md border flex-shrink-0 ${style}`}>
                 <Icon size={16} />
               </div>
 

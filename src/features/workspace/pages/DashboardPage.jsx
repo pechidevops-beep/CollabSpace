@@ -7,7 +7,7 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Modal from '../../../components/ui/Modal';
 import Badge from '../../../components/ui/Badge';
-import Card from '../../../components/ui/Card';
+import Card, { CardRow } from '../../../components/ui/Card';
 import CountUp from '../../../components/ui/CountUp';
 import EmptyState from '../../../components/ui/EmptyState';
 import { supabase } from '../../../lib/supabaseClient';
@@ -323,14 +323,12 @@ export default function DashboardPage() {
       <DashboardHero />
 
       {/* 12-Column Bento Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Wide Hero Tile (8 cols): Continue where you left off */}
         <div className="lg:col-span-8">
           <Card
             spotlight={true}
-            className={`p-6 flex flex-col justify-between ${
-              latestRepo ? 'h-full' : ''
-            }`}
+            className="p-6"
           >
             <div>
               <div className="flex items-center justify-between gap-2">
@@ -415,7 +413,7 @@ export default function DashboardPage() {
             </div>
 
             {latestRepo && (
-              <div className="mt-6 pt-4 border-t border-border-dim/60 flex items-center justify-between flex-wrap gap-3">
+              <div className="mt-4 pt-3 border-t border-border-dim/60 flex items-center justify-between flex-wrap gap-3">
                 <div className="text-xs text-text-sub">
                   Ready to resume your editor session
                 </div>
@@ -440,15 +438,15 @@ export default function DashboardPage() {
 
         {/* Side Tile (4 cols): Workspaces / Repositories / Members with Count-ups */}
         <div className="lg:col-span-4">
-          <Card spotlight={true} className="p-6 h-full flex flex-col justify-between">
+          <Card spotlight={true} className="p-6">
             <div>
               <h3 className="text-xs font-semibold text-text-sub uppercase tracking-wider">
                 Workspace Overview
               </h3>
-              <div className="mt-4 space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-[10px] bg-subtle border border-border-dim">
+              <div className="mt-4 space-y-3">
+                <CardRow className="p-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim">
+                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim/40">
                       <Building2 size={16} />
                     </div>
                     <span className="text-xs font-medium text-text-main">Workspaces</span>
@@ -456,11 +454,11 @@ export default function DashboardPage() {
                   <span className="text-lg font-semibold text-text-main font-mono">
                     <CountUp value={workspaces.length} />
                   </span>
-                </div>
+                </CardRow>
 
-                <div className="flex items-center justify-between p-3 rounded-[10px] bg-subtle border border-border-dim">
+                <CardRow className="p-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim">
+                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim/40">
                       <FolderGit2 size={16} />
                     </div>
                     <span className="text-xs font-medium text-text-main">Repositories</span>
@@ -468,11 +466,11 @@ export default function DashboardPage() {
                   <span className="text-lg font-semibold text-text-main font-mono">
                     <CountUp value={totalRepos} />
                   </span>
-                </div>
+                </CardRow>
 
-                <div className="flex items-center justify-between p-3 rounded-[10px] bg-subtle border border-border-dim">
+                <CardRow className="p-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim">
+                    <div className="h-8 w-8 rounded-[8px] bg-surface flex items-center justify-center text-accent shrink-0 border border-border-dim/40">
                       <Users size={16} />
                     </div>
                     <span className="text-xs font-medium text-text-main">Members</span>
@@ -480,7 +478,7 @@ export default function DashboardPage() {
                   <span className="text-lg font-semibold text-text-main font-mono">
                     <CountUp value={totalMembers} />
                   </span>
-                </div>
+                </CardRow>
               </div>
             </div>
 
@@ -567,7 +565,7 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-2.5">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 rounded-[14px] bg-subtle animate-pulse border border-border-dim" />
+                <div key={i} className="h-16 rounded-2xl bg-subtle animate-pulse border border-border-dim" />
               ))}
             </div>
           ) : workspaces.length === 0 ? (

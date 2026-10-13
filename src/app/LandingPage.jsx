@@ -241,7 +241,7 @@ export default function LandingPage() {
         <div className="mt-16 sm:mt-20 max-w-5xl mx-auto perspective-1000">
           <div
             ref={mockupRef}
-            className="rounded-[14px] border border-border-dim bg-surface p-2 shadow-2xl transition-transform duration-200"
+            className="rounded-2xl border border-border-dim bg-surface p-2 shadow-2xl transition-transform duration-200"
           >
             {/* Window chrome header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-border-dim/60 mb-2">

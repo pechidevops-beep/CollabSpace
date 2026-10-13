@@ -5,6 +5,7 @@ import FileTree from '../../editor/components/FileTree';
 import PageTransition from '../../../components/shared/PageTransition';
 import Button from '../../../components/ui/Button';
 import Skeleton from '../../../components/ui/Skeleton';
+import Card, { CardRow } from '../../../components/ui/Card';
 import ReactMarkdown from 'react-markdown';
 import {
     createRepositoryFile,
@@ -157,10 +158,10 @@ export default function RepositoryPage() {
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2">
-                        <Skeleton className="h-96 rounded-[14px]" />
+                        <Skeleton className="h-96 rounded-2xl" />
                     </div>
                     <div>
-                        <Skeleton className="h-64 rounded-[14px]" />
+                        <Skeleton className="h-64 rounded-2xl" />
                     </div>
                 </div>
             </div>
@@ -271,7 +272,7 @@ export default function RepositoryPage() {
                             </form>
                         )}
 
-                        <div className="h-[400px] rounded-[14px] overflow-hidden border border-border-dim bg-surface shadow-subtle">
+                        <Card className="h-[400px] overflow-hidden p-0">
                             <FileTree
                                 tree={tree}
                                 currentFileId={null}
@@ -281,10 +282,10 @@ export default function RepositoryPage() {
                                 onRename={handleRename}
                                 onDelete={handleDelete}
                             />
-                        </div>
+                        </Card>
 
                         {readmeContent && (
-                            <div className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
+                            <Card className="p-5">
                                 <h3 className="text-xs font-semibold text-text-main uppercase tracking-wider mb-3">README.md</h3>
                                 <div className="text-xs text-text-sub leading-relaxed prose-invert">
                                     <ReactMarkdown>{readmeContent}</ReactMarkdown>
@@ -292,12 +293,12 @@ export default function RepositoryPage() {
                                 <p className="mt-4 pt-3 border-t border-border-dim text-[11px] text-text-dim">
                                     Last updated: {readmeFile?.last_modified_at ? new Date(readmeFile.last_modified_at).toLocaleString() : 'Unknown'}
                                 </p>
-                            </div>
+                            </Card>
                         )}
                     </div>
 
                     <div className="space-y-4">
-                        <div className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
+                        <Card className="p-4">
                             <h3 className="text-xs font-semibold text-text-main uppercase tracking-wider mb-3 flex items-center gap-2">
                                 <GitCommit size={14} className="text-accent" />
                                 Recent Commits
@@ -307,16 +308,16 @@ export default function RepositoryPage() {
                             ) : (
                                 <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                                     {commits.slice(0, 10).map(c => (
-                                        <div key={c.id} className="p-2.5 rounded-[10px] bg-subtle border border-border-dim">
+                                        <CardRow key={c.id} className="p-2.5 flex-col items-start">
                                             <p className="text-xs text-text-main leading-snug font-medium">{c.message}</p>
                                             <p className="text-[10px] text-text-dim mt-1">
                                                 {new Date(c.created_at).toLocaleDateString()} • {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </p>
-                                        </div>
+                                        </CardRow>
                                     ))}
                                 </div>
                             )}
-                        </div>
+                        </Card>
                     </div>
                 </div>
             </div>

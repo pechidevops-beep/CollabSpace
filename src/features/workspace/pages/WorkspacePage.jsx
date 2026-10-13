@@ -7,6 +7,7 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import EmptyState from '../../../components/ui/EmptyState';
 import Skeleton from '../../../components/ui/Skeleton';
+import Card, { CardRow } from '../../../components/ui/Card';
 import { createRepository, getRepositories } from '../../../services/repositoryService';
 import {
     getWorkspaceById,
@@ -139,11 +140,11 @@ export default function WorkspacePage() {
                     <Skeleton className="h-8 w-48 rounded-md" />
                     <Skeleton className="h-9 w-28 rounded-md" />
                 </div>
-                <Skeleton className="h-24 w-full rounded-[14px]" />
+                <Skeleton className="h-24 w-full rounded-[16px]" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <Skeleton className="h-36 rounded-[14px]" />
-                    <Skeleton className="h-36 rounded-[14px]" />
-                    <Skeleton className="h-36 rounded-[14px]" />
+                    <Skeleton className="h-36 rounded-[16px]" />
+                    <Skeleton className="h-36 rounded-[16px]" />
+                    <Skeleton className="h-36 rounded-[16px]" />
                 </div>
             </div>
         );
@@ -195,7 +196,7 @@ export default function WorkspacePage() {
 
                 {/* Join Code */}
                 {workspace.join_code && (
-                    <div className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle flex items-center justify-between">
+                    <Card className="p-5 flex items-center justify-between">
                         <div>
                             <p className="text-[11px] font-medium text-text-sub uppercase tracking-wider mb-1">
                                 Join Code
@@ -212,12 +213,12 @@ export default function WorkspacePage() {
                         >
                             {copied ? 'Copied' : 'Copy'}
                         </Button>
-                    </div>
+                    </Card>
                 )}
 
                 {/* Create Repo Form */}
                 {repoFormOpen && (
-                    <div className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4 animate-fade-in">
+                    <Card className="p-6 space-y-4 animate-fade-in">
                         <div className="flex items-center justify-between">
                             <h2 className="text-sm font-semibold text-text-main">Create Repository</h2>
                             <button
@@ -300,7 +301,7 @@ export default function WorkspacePage() {
                                 </Button>
                             </div>
                         </form>
-                    </div>
+                    </Card>
                 )}
 
                 {/* Repositories Grid */}
@@ -349,32 +350,34 @@ export default function WorkspacePage() {
                     </div>
 
                     {inviteOpen && (
-                        <form onSubmit={handleInvite} className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle mb-4 flex items-center gap-3 animate-fade-in">
-                            <Mail size={15} className="text-text-dim shrink-0" />
-                            <input
-                                autoFocus
-                                value={inviteEmail}
-                                onChange={e => setInviteEmail(e.target.value)}
-                                placeholder="Enter user email to invite"
-                                className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                            />
-                            <Button
-                                type="submit"
-                                variant="primary"
-                                size="sm"
-                                loading={inviting}
-                                disabled={inviting || !inviteEmail.trim()}
-                            >
-                                {inviting ? 'Inviting…' : 'Invite'}
-                            </Button>
-                            <button
-                                type="button"
-                                onClick={() => setInviteOpen(false)}
-                                className="text-text-dim hover:text-text-main p-1 transition-colors"
-                            >
-                                <X size={15} />
-                            </button>
-                        </form>
+                        <Card className="p-4 mb-4 animate-fade-in">
+                            <form onSubmit={handleInvite} className="flex items-center gap-3">
+                                <Mail size={15} className="text-text-dim shrink-0" />
+                                <input
+                                    autoFocus
+                                    value={inviteEmail}
+                                    onChange={e => setInviteEmail(e.target.value)}
+                                    placeholder="Enter user email to invite"
+                                    className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                />
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    size="sm"
+                                    loading={inviting}
+                                    disabled={inviting || !inviteEmail.trim()}
+                                >
+                                    {inviting ? 'Inviting…' : 'Invite'}
+                                </Button>
+                                <button
+                                    type="button"
+                                    onClick={() => setInviteOpen(false)}
+                                    className="text-text-dim hover:text-text-main p-1 transition-colors"
+                                >
+                                    <X size={15} />
+                                </button>
+                            </form>
+                        </Card>
                     )}
 
                     <div className="space-y-2">
@@ -392,7 +395,7 @@ export default function WorkspacePage() {
                             }[m.role] || 'text-text-dim bg-subtle border-border-dim';
 
                             return (
-                                <div key={m.id} className="p-3.5 rounded-[10px] bg-surface border border-border-dim flex items-center justify-between group hover:border-border-strong transition-colors">
+                                <CardRow key={m.id} className="p-3.5 group hover:border-border-strong">
                                     <div className="flex items-center gap-3">
                                         <div className="w-8 h-8 rounded-full bg-subtle border border-border-dim flex items-center justify-center text-[11px] font-semibold text-text-main">
                                             {(m.profiles?.full_name || m.profiles?.email || '?')[0].toUpperCase()}
@@ -455,7 +458,7 @@ export default function WorkspacePage() {
                                             </button>
                                         )}
                                     </div>
-                                </div>
+                                </CardRow>
                             );
                         })}
                     </div>

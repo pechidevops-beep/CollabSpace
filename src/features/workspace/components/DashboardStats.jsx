@@ -3,6 +3,7 @@ import { LayoutGrid, FolderGit2, Users } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { getDashboardStats } from '../../../services/workspaceService';
 import Skeleton from '../../../components/ui/Skeleton';
+import Card from '../../../components/ui/Card';
 
 export default function DashboardStats({ workspaces = [], loading = false }) {
   const { user } = useAuth();
@@ -29,7 +30,7 @@ export default function DashboardStats({ workspaces = [], loading = false }) {
   const isLoading = loading || statsLoading;
 
   if (isLoading) {
-    return <Skeleton className="h-16 w-full rounded-[14px] mb-8" />;
+    return <Skeleton className="h-16 w-full rounded-[16px] mb-8" />;
   }
 
   const items = [
@@ -39,7 +40,7 @@ export default function DashboardStats({ workspaces = [], loading = false }) {
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle mb-8 divide-y sm:divide-y-0 sm:divide-x divide-border-dim">
+    <Card className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 mb-8 divide-y sm:divide-y-0 sm:divide-x divide-border-dim/60">
       {items.map((stat) => {
         const Icon = stat.icon;
         return (
@@ -58,6 +59,6 @@ export default function DashboardStats({ workspaces = [], loading = false }) {
           </div>
         );
       })}
-    </div>
+    </Card>
   );
 }

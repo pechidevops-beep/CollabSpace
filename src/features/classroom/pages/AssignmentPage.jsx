@@ -4,6 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import PageTransition from '../../../components/shared/PageTransition';
 import Button from '../../../components/ui/Button';
 import Skeleton from '../../../components/ui/Skeleton';
+import Card from '../../../components/ui/Card';
 import EmptyState from '../../../components/ui/EmptyState';
 import {
     getAssignmentById,
@@ -134,8 +135,8 @@ export default function AssignmentPage() {
         return (
             <div className="max-w-4xl mx-auto space-y-4 py-4 animate-fade-up">
                 <Skeleton className="h-6 w-36 rounded-md" />
-                <Skeleton className="h-44 w-full rounded-[14px]" />
-                <Skeleton className="h-32 w-full rounded-[14px]" />
+                <Skeleton className="h-44 w-full rounded-2xl" />
+                <Skeleton className="h-32 w-full rounded-2xl" />
             </div>
         );
     }
@@ -171,7 +172,7 @@ export default function AssignmentPage() {
                 )}
 
                 {/* Assignment details */}
-                <div className="p-6 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
+                <Card className="p-6">
                     <div className="flex items-start justify-between mb-4">
                         <div>
                             <h1 className="text-xl font-semibold text-text-main tracking-tight">{assignment.title}</h1>
@@ -196,13 +197,13 @@ export default function AssignmentPage() {
                             Due: {new Date(assignment.due_date).toLocaleString()}
                         </div>
                     )}
-                </div>
+                </Card>
 
                 {/* Student View */}
                 {!canGradeSubmissions && (
                     <div className="space-y-4">
                         {mySubmission ? (
-                            <div className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-3">
+                            <Card className="p-5 space-y-3">
                                 <div className="flex items-center gap-2">
                                     <CheckCircle2 size={16} className="text-semantic-success" />
                                     <span className="text-xs font-semibold text-text-main">Submitted</span>
@@ -240,34 +241,36 @@ export default function AssignmentPage() {
                                         </Button>
                                     </form>
                                 )}
-                            </div>
+                            </Card>
                         ) : (
-                            <form onSubmit={handleSubmit} className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-3">
-                                <h3 className="text-sm font-semibold text-text-main">Submit Your Work</h3>
-                                <p className="text-xs text-text-sub">Paste a repository ID or link below.</p>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        value={repoLink}
-                                        onChange={e => setRepoLink(e.target.value)}
-                                        placeholder="Repository ID or link"
-                                        className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                                        disabled={isPastDue}
-                                    />
-                                    <Button
-                                        type="submit"
-                                        variant="primary"
-                                        size="sm"
-                                        icon={Send}
-                                        loading={submitting}
-                                        disabled={submitting || !repoLink.trim() || isPastDue}
-                                    >
-                                        {submitting ? 'Submitting…' : 'Submit'}
-                                    </Button>
-                                </div>
-                                {isPastDue && (
-                                    <p className="text-[11px] text-semantic-danger font-medium">This assignment is past due and can no longer be submitted.</p>
-                                )}
-                            </form>
+                            <Card className="p-5 space-y-3">
+                                <form onSubmit={handleSubmit} className="space-y-3">
+                                    <h3 className="text-sm font-semibold text-text-main">Submit Your Work</h3>
+                                    <p className="text-xs text-text-sub">Paste a repository ID or link below.</p>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            value={repoLink}
+                                            onChange={e => setRepoLink(e.target.value)}
+                                            placeholder="Repository ID or link"
+                                            className="flex-1 bg-subtle border border-border-dim rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            disabled={isPastDue}
+                                        />
+                                        <Button
+                                            type="submit"
+                                            variant="primary"
+                                            size="sm"
+                                            icon={Send}
+                                            loading={submitting}
+                                            disabled={submitting || !repoLink.trim() || isPastDue}
+                                        >
+                                            {submitting ? 'Submitting…' : 'Submit'}
+                                        </Button>
+                                    </div>
+                                    {isPastDue && (
+                                        <p className="text-[11px] text-semantic-danger font-medium">This assignment is past due and can no longer be submitted.</p>
+                                    )}
+                                </form>
+                            </Card>
                         )}
                     </div>
                 )}
@@ -277,18 +280,18 @@ export default function AssignmentPage() {
                     <div className="space-y-4">
                         {/* Stats bar */}
                         <div className="grid grid-cols-3 gap-3">
-                            <div className="p-3.5 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                            <Card className="p-3.5 text-center">
                                 <p className="text-xl font-bold text-text-main tracking-tight">{submissions.length}</p>
                                 <p className="text-[11px] text-text-dim mt-0.5">Submissions</p>
-                            </div>
-                            <div className="p-3.5 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                            </Card>
+                            <Card className="p-3.5 text-center">
                                 <p className="text-xl font-bold text-semantic-success tracking-tight">{gradedCount}</p>
                                 <p className="text-[11px] text-text-dim mt-0.5">Graded</p>
-                            </div>
-                            <div className="p-3.5 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                            </Card>
+                            <Card className="p-3.5 text-center">
                                 <p className="text-xl font-bold text-accent tracking-tight">{avgGrade}</p>
                                 <p className="text-[11px] text-text-dim mt-0.5">Avg Grade</p>
-                            </div>
+                            </Card>
                         </div>
 
                         <h2 className="text-sm font-semibold text-text-main">
@@ -302,7 +305,7 @@ export default function AssignmentPage() {
                         ) : (
                             <div className="space-y-3">
                                 {submissions.map(s => (
-                                    <div key={s.id} className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
+                                    <Card key={s.id} className="p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-3">
                                                 <div className="w-8 h-8 rounded-full bg-subtle border border-border-dim flex items-center justify-center text-[11px] font-semibold text-text-main">
@@ -395,7 +398,7 @@ export default function AssignmentPage() {
                                                 </div>
                                             </div>
                                         )}
-                                    </div>
+                                    </Card>
                                 ))}
                             </div>
                         )}

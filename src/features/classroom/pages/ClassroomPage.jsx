@@ -7,6 +7,7 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import EmptyState from '../../../components/ui/EmptyState';
 import Skeleton from '../../../components/ui/Skeleton';
+import Card from '../../../components/ui/Card';
 import {
     createAssignment,
     getAssignments,
@@ -132,7 +133,7 @@ export default function ClassroomPage() {
                         </div>
                     </header>
 
-                    <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle">
+                    <Card className="p-5">
                         <h2 className="text-sm font-semibold text-text-main">Your workspaces</h2>
                         {workspaceLoading && (
                             <p className="mt-2 text-xs text-text-sub">Loading workspaces...</p>
@@ -172,7 +173,7 @@ export default function ClassroomPage() {
                                 ))}
                             </ul>
                         )}
-                    </section>
+                    </Card>
                 </div>
             </PageTransition>
         );
@@ -186,14 +187,14 @@ export default function ClassroomPage() {
                     <Skeleton className="h-9 w-28 rounded-md" />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <Skeleton className="h-20 rounded-[14px]" />
-                    <Skeleton className="h-20 rounded-[14px]" />
-                    <Skeleton className="h-20 rounded-[14px]" />
+                    <Skeleton className="h-20 rounded-2xl" />
+                    <Skeleton className="h-20 rounded-2xl" />
+                    <Skeleton className="h-20 rounded-2xl" />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-                    <Skeleton className="h-44 rounded-[14px]" />
-                    <Skeleton className="h-44 rounded-[14px]" />
-                    <Skeleton className="h-44 rounded-[14px]" />
+                    <Skeleton className="h-44 rounded-2xl" />
+                    <Skeleton className="h-44 rounded-2xl" />
+                    <Skeleton className="h-44 rounded-2xl" />
                 </div>
             </div>
         );
@@ -229,69 +230,71 @@ export default function ClassroomPage() {
 
                 {/* Create Assignment Form */}
                 {formOpen && (
-                    <form onSubmit={handleCreate} className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4 animate-fade-in">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-semibold text-text-main">Create Assignment</h2>
-                            <button
-                                type="button"
-                                onClick={() => setFormOpen(false)}
-                                className="text-text-dim hover:text-text-main p-1 transition-colors"
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-                        <Input
-                            autoFocus
-                            value={title}
-                            onChange={e => setTitle(e.target.value)}
-                            placeholder="Assignment title"
-                            label="Title"
-                            required
-                        />
-                        <div className="flex flex-col gap-1.5 w-full">
-                            <label className="text-xs font-medium text-text-main">
-                                Instructions & Description
-                            </label>
-                            <textarea
-                                value={description}
-                                onChange={e => setDescription(e.target.value)}
-                                placeholder="Instructions & description (optional)"
-                                rows={3}
-                                className="w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
+                    <Card className="p-5 animate-fade-in">
+                        <form onSubmit={handleCreate} className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-sm font-semibold text-text-main">Create Assignment</h2>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormOpen(false)}
+                                    className="text-text-dim hover:text-text-main p-1 transition-colors"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                            <Input
+                                autoFocus
+                                value={title}
+                                onChange={e => setTitle(e.target.value)}
+                                placeholder="Assignment title"
+                                label="Title"
+                                required
                             />
-                        </div>
-                        <div className="flex flex-col gap-1.5 w-full">
-                            <label className="text-xs font-medium text-text-main flex items-center gap-1.5">
-                                <Calendar size={13} className="text-text-dim" />
-                                <span>Due Date</span>
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={dueDate}
-                                onChange={e => setDueDate(e.target.value)}
-                                className="h-9 w-full sm:w-64 rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                            />
-                        </div>
-                        <div className="flex gap-2 justify-end pt-2">
-                            <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => setFormOpen(false)}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                type="submit"
-                                variant="primary"
-                                size="sm"
-                                loading={creating}
-                                disabled={creating || !title.trim()}
-                            >
-                                {creating ? 'Creating…' : 'Create Assignment'}
-                            </Button>
-                        </div>
-                    </form>
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-xs font-medium text-text-main">
+                                    Instructions & Description
+                                </label>
+                                <textarea
+                                    value={description}
+                                    onChange={e => setDescription(e.target.value)}
+                                    placeholder="Instructions & description (optional)"
+                                    rows={3}
+                                    className="w-full rounded-md bg-subtle border border-border-dim text-text-main text-xs p-3 transition-colors placeholder:text-text-dim focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-xs font-medium text-text-main flex items-center gap-1.5">
+                                    <Calendar size={13} className="text-text-dim" />
+                                    <span>Due Date</span>
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={dueDate}
+                                    onChange={e => setDueDate(e.target.value)}
+                                    className="h-9 w-full sm:w-64 rounded-md bg-subtle border border-border-dim text-text-main text-xs px-3 transition-colors focus:bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                />
+                            </div>
+                            <div className="flex gap-2 justify-end pt-2">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setFormOpen(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="primary"
+                                    size="sm"
+                                    loading={creating}
+                                    disabled={creating || !title.trim()}
+                                >
+                                    {creating ? 'Creating…' : 'Create Assignment'}
+                                </Button>
+                            </div>
+                        </form>
+                    </Card>
                 )}
 
                 {/* Stat summary */}
@@ -309,10 +312,10 @@ export default function ClassroomPage() {
                             color: 'text-semantic-warning',
                         },
                     ].map((s, i) => (
-                        <div key={i} className="p-4 rounded-[14px] bg-surface border border-border-dim shadow-subtle text-center">
+                        <Card key={i} className="p-4 text-center">
                             <p className="text-2xl font-bold text-text-main tracking-tight leading-none">{s.value}</p>
                             <p className={`text-[11px] font-medium mt-1.5 ${s.color}`}>{s.label}</p>
-                        </div>
+                        </Card>
                     ))}
                 </div>
 

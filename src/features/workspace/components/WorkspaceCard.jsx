@@ -2,12 +2,13 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, GraduationCap, Users } from 'lucide-react';
 import Badge from '../../../components/ui/Badge';
+import Card from '../../../components/ui/Card';
 
 export default function WorkspaceCard({ workspace, onDelete, isDeleting }) {
     const isClassroom = workspace.type === 'classroom';
 
     return (
-        <div className="p-4 rounded-[14px] bg-surface border border-border-dim hover:border-border-strong hover:bg-subtle shadow-subtle transition-all duration-150 relative group">
+        <Card interactive={true} className="p-5 relative group">
             <Link to={`/app/workspace/${workspace.id}`} className="block h-full flex flex-col justify-between">
                 <div>
                     <div className="flex justify-between items-start mb-3.5">
@@ -51,6 +52,6 @@ export default function WorkspaceCard({ workspace, onDelete, isDeleting }) {
                     <ArrowRight size={14} className="text-text-dim group-hover:text-text-main group-hover:translate-x-0.5 transition-all" />
                 </div>
             </Link>
-        </div>
+        </Card>
     );
 }

@@ -6,6 +6,8 @@ import Input from '../../../components/ui/Input';
 import { ThemeToggle } from '../../../components/ui/ThemeToggle';
 import { User, Shield, Moon } from 'lucide-react';
 
+import Card, { CardRow } from '../../../components/ui/Card';
+
 export default function SettingsPage() {
   const { user, profile, updateProfile } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -43,7 +45,7 @@ export default function SettingsPage() {
         </header>
 
         {/* Profile Section */}
-        <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4">
+        <Card className="p-6 space-y-4">
           <div className="flex items-center gap-2">
             <User size={16} className="text-accent" />
             <h2 className="text-sm font-semibold text-text-main">Profile Information</h2>
@@ -71,10 +73,10 @@ export default function SettingsPage() {
               {error && <span className="text-xs text-semantic-danger font-medium animate-fadeIn">{error}</span>}
             </div>
           </form>
-        </section>
+        </Card>
 
         {/* Theme & Appearance Section */}
-        <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-4">
+        <Card className="p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Moon size={16} className="text-accent" />
@@ -85,26 +87,26 @@ export default function SettingsPage() {
             </div>
             <ThemeToggle />
           </div>
-        </section>
+        </Card>
 
         {/* Account Details Section */}
-        <section className="p-5 rounded-[14px] bg-surface border border-border-dim shadow-subtle space-y-3">
+        <Card className="p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Shield size={16} className="text-accent" />
             <h2 className="text-sm font-semibold text-text-main">Account Details</h2>
           </div>
 
-          <div className="text-xs divide-y divide-border-dim">
-            <div className="flex items-center justify-between py-2.5">
-              <span className="text-text-sub">Email</span>
+          <div className="space-y-2 text-xs">
+            <CardRow className="p-3">
+              <span className="text-text-sub font-medium">Email</span>
               <span className="text-text-main font-mono">{user?.email || 'Unavailable'}</span>
-            </div>
-            <div className="flex items-center justify-between py-2.5">
-              <span className="text-text-sub">User ID</span>
+            </CardRow>
+            <CardRow className="p-3">
+              <span className="text-text-sub font-medium">User ID</span>
               <span className="text-text-dim font-mono text-[11px]">{user?.id || 'Unavailable'}</span>
-            </div>
+            </CardRow>
           </div>
-        </section>
+        </Card>
       </div>
     </PageTransition>
   );

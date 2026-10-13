@@ -150,17 +150,31 @@
   /* Signature Look: Card Primitives */
   .card-signature {
     background-color: rgb(var(--color-surface));
-    border: none;
-    border-radius: 16px;
+    border-radius: 16px !important;
     position: relative;
-    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.08);
+    border: none !important;
+    outline: none !important;
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.08) !important;
   }
 
   .dark .card-signature {
     background-color: rgb(var(--color-surface));
     background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(var(--color-border), 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  /* Shared Card Row / List Item Primitive */
+  .card-row {
+    border-radius: 10px;
+    background-color: rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .dark .card-row {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   /* Page Ambient Glow (top center, 6-8% opacity, ~600px) */

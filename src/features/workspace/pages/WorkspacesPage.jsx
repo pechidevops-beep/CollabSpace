@@ -46,9 +46,9 @@ export default function WorkspacesPage() {
 
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Skeleton className="h-36 rounded-[14px]" />
-          <Skeleton className="h-36 rounded-[14px]" />
-          <Skeleton className="h-36 rounded-[14px]" />
+          <Skeleton className="h-36 rounded-[16px]" />
+          <Skeleton className="h-36 rounded-[16px]" />
+          <Skeleton className="h-36 rounded-[16px]" />
         </div>
       ) : error ? (
         <div className="p-4 rounded-[10px] bg-semantic-danger/10 border border-semantic-danger/20 text-semantic-danger text-xs">

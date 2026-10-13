@@ -3,6 +3,7 @@ import { Outlet, NavLink, useParams, Link, useLocation } from 'react-router-dom'
 import { getWorkspaceById } from '../../../services/workspaceService';
 import { LayoutGrid, BookOpen } from 'lucide-react';
 import Skeleton from '../../../components/ui/Skeleton';
+import Card from '../../../components/ui/Card';
 
 export default function WorkspaceLayout() {
     const { workspaceId } = useParams();
@@ -50,12 +51,12 @@ export default function WorkspaceLayout() {
     if (error || !workspace) {
         return (
             <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-center p-6 rounded-[16px] bg-surface border border-border-dim max-w-sm">
+                <Card className="text-center p-6 max-w-sm">
                     <p className="text-xs text-semantic-danger mb-3">{error || 'Workspace not found.'}</p>
                     <Link to="/app/dashboard" className="text-xs text-accent hover:underline font-medium">
                         Back to Dashboard
                     </Link>
-                </div>
+                </Card>
             </div>
         );
     }

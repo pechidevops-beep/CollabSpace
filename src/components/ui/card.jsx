@@ -116,4 +116,19 @@ export const CardFooter = forwardRef(function CardFooter(
   );
 });
 
+export const CardRow = forwardRef(function CardRow(
+  { children, className = '', ...props },
+  ref
+) {
+  return (
+    <div
+      ref={ref}
+      className={`card-row flex items-center justify-between p-3 text-xs text-text-main transition-colors ${className}`}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+});
+
 export default Card;

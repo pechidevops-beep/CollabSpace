@@ -1,13 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FileCode, Calendar, FolderGit2, Globe, Lock } from 'lucide-react';
+import Card from '../../../components/ui/Card';
 
 export default function RepositoryCard({ repo }) {
     const isPrivate = repo.visibility === 'private';
 
     return (
         <Link to={`/app/workspace/${repo.workspace_id}/repo/${repo.id}`} className="block h-full group">
-            <div className="p-4 rounded-[14px] bg-surface border border-border-dim hover:border-border-strong hover:bg-subtle shadow-subtle transition-all duration-150 h-full flex flex-col justify-between">
+            <Card interactive={true} className="p-5 h-full flex flex-col justify-between">
                 <div>
                     <div className="flex items-start justify-between mb-3.5">
                         <div className="p-2.5 bg-subtle border border-border-dim text-accent rounded-[10px] group-hover:border-border-strong transition-colors">
@@ -48,7 +49,7 @@ export default function RepositoryCard({ repo }) {
                         <span>{new Date(repo.created_at).toLocaleDateString()}</span>
                     </div>
                 </div>
-            </div>
+            </Card>
         </Link>
     );
 }
