@@ -16,6 +16,7 @@ function createTestToken(sub = 'test-user-uuid', email = 'test@collabspace.dev')
         sub,
         email,
         role: 'authenticated',
+        aud: 'authenticated',
         exp: Math.floor(Date.now() / 1000) + 3600,
     })).toString('base64url');
 

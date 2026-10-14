@@ -7,18 +7,37 @@ const runRouter = require('./routes/run');
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// ── CORS configuration with allowlist from env ──
-const CORS_ORIGINS = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000';
+/**
+ * Validates security constraints before startup.
+ * The server MUST refuse to start if NODE_ENV === 'production' and ALLOW_TEST_AUTH is set.
+ */
+function validateServerEnvironment() {
+    if (
+        process.env.NODE_ENV === 'production' &&
+        (process.env.ALLOW_TEST_AUTH === 'true' || process.env.ALLOW_TEST_AUTH === '1')
+    ) {
+        throw new Error('FATAL: Refusing to start in production with ALLOW_TEST_AUTH enabled.');
+    }
+}
+
+// ── CORS configuration: defaults to DENY when no origins are configured ──
+const CORS_ORIGINS = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
 const allowedOrigins = CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean);
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow requests with no origin (e.g. mobile apps, curl, server-to-server) or in allowlist
-        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error(`Origin "${origin}" not allowed by CORS policy.`));
+        // Requests without Origin header (e.g. server-to-server, curl, local health checks) are allowed
+        if (!origin) {
+            return callback(null, true);
         }
+        // If an Origin header is sent and no origins are configured, default to DENY
+        if (allowedOrigins.length === 0) {
+            return callback(new Error('CORS denied: no allowed origins configured.'));
+        }
+        if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error(`Origin "${origin}" not allowed by CORS policy.`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'OPTIONS'],
@@ -66,7 +85,7 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-    if (err.message && err.message.includes('CORS policy')) {
+    if (err.message && err.message.includes('CORS')) {
         return res.status(403).json({ error: err.message });
     }
     console.error('[server error]', err);
@@ -75,10 +94,11 @@ app.use((err, req, res, next) => {
 
 const { startupReaper, startReaperInterval } = require('./utils/reaper');
 
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module && process.env.NODE_ENV !== 'test') {
+    validateServerEnvironment();
     app.listen(PORT, () => {
         console.log(`🚀 CollabSpace Execution Server running on port ${PORT}`);
-        console.log(`   Allowed origins: ${allowedOrigins.join(', ')}`);
+        console.log(`   Allowed origins: ${allowedOrigins.length > 0 ? allowedOrigins.join(', ') : 'NONE (DENY ALL)'}`);
         console.log(`   Java image:   ${process.env.JAVA_IMAGE || 'collabspace-java'}`);
         console.log(`   Python image: ${process.env.PYTHON_IMAGE || 'collabspace-python'}`);
         console.log(`   Timeout:      ${process.env.EXECUTION_TIMEOUT_MS || 8000}ms`);
@@ -90,3 +110,5 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 module.exports = app;
+module.exports.validateServerEnvironment = validateServerEnvironment;
+module.exports.allowedOrigins = allowedOrigins;

@@ -85,3 +85,14 @@ test('api: POST /api/run returns 400 for unsupported language', async () => {
     assert.strictEqual(res.status, 400);
     assert.ok(res.body.error.includes('Unsupported language'));
 });
+
+test('api: CORS policy blocks unauthorized origins with 403', async () => {
+    const res = await makeRequest(app, {
+        method: 'GET',
+        url: '/health',
+        headers: { Origin: 'http://malicious-site.example.com' },
+    });
+    // CORS middleware responds with 403 when origin is disallowed
+    assert.strictEqual(res.status, 403);
+    assert.ok(res.body.error.includes('CORS'));
+});
