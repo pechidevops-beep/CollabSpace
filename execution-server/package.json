@@ -5,8 +5,9 @@
     "main": "src/index.js",
     "scripts": {
         "start": "node src/index.js",
-        "dev": "nodemon src/index.js",
-        "test": "node -r ./test/setup.js --test test/*.test.js"
+        "test": "node -r ./test/setup.js --test test/*.test.js",
+        "test:integration": "node -r ./test/setup.js --test test/integration/*.test.js",
+        "docker:build": "docker build -t collabspace-java:latest -f docker/java.Dockerfile docker && docker build -t collabspace-python:latest -f docker/python.Dockerfile docker"
     },
     "dependencies": {
         "cors": "^2.8.5",
