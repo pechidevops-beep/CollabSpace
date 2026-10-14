@@ -26,10 +26,34 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
+
+// Body limit (2MB) with graceful 413 error handling
+const BODY_LIMIT = process.env.BODY_LIMIT || '2mb';
+app.use(express.json({ limit: BODY_LIMIT }));
+
+// Handle JSON body parse errors (e.g. payload too large)
+app.use((err, req, res, next) => {
+    if (err.type === 'entity.too.large') {
+        return res.status(413).json({
+            error: `Payload too large. Maximum body size is ${BODY_LIMIT}.`,
+        });
+    }
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+        return res.status(400).json({ error: 'Malformed JSON payload.' });
+    }
+    next(err);
+});
+
+const { getConcurrencyStats } = require('./middleware/concurrency');
 
 // Health check endpoint (public for orchestrators / health monitoring)
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: process.uptime(),
+        concurrency: getConcurrencyStats(),
+    });
+});
 
 // Protect /api/run and every other route with Supabase access-token authentication
 app.use('/api', requireAuth);
