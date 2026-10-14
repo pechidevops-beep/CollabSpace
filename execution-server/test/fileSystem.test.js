@@ -1,0 +1,105 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const path = require('node:path');
+const os = require('node:os');
+const fs = require('node:fs');
+const { v4: uuidv4 } = require('uuid');
+
+const {
+    createTempDir,
+    writeFiles,
+    cleanup,
+    safePath,
+    MAX_FILES,
+    MAX_SINGLE_FILE_BYTES,
+    MAX_TOTAL_BYTES,
+} = require('../src/utils/fileSystem');
+
+test('fileSystem: safePath resolves safe relative paths inside baseDir', () => {
+    const base = os.tmpdir();
+    const resolved = safePath(base, 'src/main.py');
+    assert.strictEqual(resolved, path.resolve(base, 'src/main.py'));
+});
+
+test('fileSystem: safePath rejects directory traversal segments (..)', () => {
+    const base = os.tmpdir();
+    assert.throws(() => safePath(base, '../outside.py'), /Path traversal/);
+    assert.throws(() => safePath(base, 'foo/../../bar.py'), /Path traversal/);
+    assert.throws(() => safePath(base, '..'), /Path traversal/);
+});
+
+test('fileSystem: safePath rejects leading slashes', () => {
+    const base = os.tmpdir();
+    assert.throws(() => safePath(base, '/etc/passwd'), /Leading slash/);
+    assert.throws(() => safePath(base, '\\Windows\\System32'), /Leading slash/);
+});
+
+test('fileSystem: safePath rejects null bytes', () => {
+    const base = os.tmpdir();
+    assert.throws(() => safePath(base, 'app.py\0.txt'), /Null byte/);
+});
+
+test('fileSystem: safePath rejects absolute Windows drive letters and UNC paths', () => {
+    const base = os.tmpdir();
+    assert.throws(() => safePath(base, 'C:\\boot.ini'), /Absolute path/);
+    assert.throws(() => safePath(base, '//server/share/file.py'), /Absolute path/);
+});
+
+test('fileSystem: safePath rejects hidden files/folders', () => {
+    const base = os.tmpdir();
+    assert.throws(() => safePath(base, '.env'), /Hidden file/);
+    assert.throws(() => safePath(base, '.git/config'), /Hidden file/);
+});
+
+test('fileSystem: safePath rejects forbidden characters', () => {
+    const base = os.tmpdir();
+    assert.throws(() => safePath(base, 'main;rm.py'), /Invalid characters/);
+    assert.throws(() => safePath(base, 'main|cat.py'), /Invalid characters/);
+    assert.throws(() => safePath(base, 'file name.py'), /Invalid characters/);
+});
+
+test('fileSystem: writeFiles enforces file limits and cleans up correctly', async () => {
+    const runId = uuidv4();
+    const tempDir = await createTempDir(runId);
+
+    try {
+        // Enforce MAX_FILES
+        const tooManyFiles = Array.from({ length: MAX_FILES + 1 }, (_, i) => ({
+            path: `file${i}.py`,
+            content: 'x = 1',
+        }));
+        await assert.rejects(
+            () => writeFiles(tempDir, tooManyFiles),
+            /Too many files/
+        );
+
+        // Enforce MAX_SINGLE_FILE_BYTES
+        const oversizedFile = [{
+            path: 'big.py',
+            content: 'a'.repeat(MAX_SINGLE_FILE_BYTES + 10),
+        }];
+        await assert.rejects(
+            () => writeFiles(tempDir, oversizedFile),
+            /max 524288/
+        );
+
+        // Valid write creates files and subdirectories
+        const validFiles = [
+            { path: 'main.py', content: 'print("hello")' },
+            { path: 'pkg/sub/helper.py', content: 'def f(): return 42' },
+        ];
+        await writeFiles(tempDir, validFiles);
+
+        assert.strictEqual(
+            fs.readFileSync(path.join(tempDir, 'main.py'), 'utf8'),
+            'print("hello")'
+        );
+        assert.strictEqual(
+            fs.readFileSync(path.join(tempDir, 'pkg', 'sub', 'helper.py'), 'utf8'),
+            'def f(): return 42'
+        );
+    } finally {
+        await cleanup(tempDir);
+        assert.strictEqual(fs.existsSync(tempDir), false);
+    }
+});

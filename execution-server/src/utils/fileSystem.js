@@ -46,14 +46,14 @@ function safePath(baseDir, filePath) {
         throw new Error(`Null byte in file path: "${filePath}"`);
     }
 
-    // 2. Reject leading slashes (both / and \)
-    if (filePath.startsWith('/') || filePath.startsWith('\\')) {
-        throw new Error(`Leading slash not allowed in file path: "${filePath}"`);
-    }
-
-    // 3. Reject absolute paths (Windows drive letters or UNC)
+    // 2. Reject absolute paths (Windows drive letters or UNC)
     if (/^[A-Za-z]:/.test(filePath) || filePath.startsWith('//') || filePath.startsWith('\\\\')) {
         throw new Error(`Absolute path not allowed: "${filePath}"`);
+    }
+
+    // 3. Reject leading slashes (both / and \)
+    if (filePath.startsWith('/') || filePath.startsWith('\\')) {
+        throw new Error(`Leading slash not allowed in file path: "${filePath}"`);
     }
 
     // 4. Normalize separators to forward slashes
