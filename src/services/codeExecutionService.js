@@ -1,14 +1,16 @@
+import { supabase } from '../lib/supabaseClient';
+
 /**
  * Code Execution Service
  *
  * - Java & Python (multi-file, packages, imports):
- *     → Docker-based local execution server at http://localhost:4000/api/run
+ *     → Docker-based execution server at VITE_EXECUTION_SERVER_URL or http://localhost:4000/api/run
  * - All other languages (JS, C++, etc):
  *     → Judge0 CE free public instance
  */
 
 // ─── Docker Execution Server ───────────────────────────────────────────────
-const EXECUTION_SERVER_URL = 'http://localhost:4000/api/run';
+const EXECUTION_SERVER_URL = import.meta.env.VITE_EXECUTION_SERVER_URL || 'http://localhost:4000/api/run';
 
 /**
  * Languages that should use the Docker execution engine (multi-file support)
@@ -37,11 +39,21 @@ export function isProjectLanguage(fileNameOrLang) {
 export async function executeProject({ language, files, stdin }) {
     const lang = language.toLowerCase().replace(/^py$/, 'python');
 
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+    } catch (authErr) {
+        console.warn('Failed to get Supabase session for execution:', authErr);
+    }
+
     let res;
     try {
         res = await fetch(EXECUTION_SERVER_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ language: lang, files, stdin: stdin || undefined }),
         });
     } catch (err) {
