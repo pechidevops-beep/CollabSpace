@@ -414,7 +414,14 @@ export default function EditorPage() {
                 result = await executeCode({ code: currentContent, language: lang });
                 result.command = `run ${file.name}`;
             } else {
-                result = { stdout: '', stderr: `Language not supported: ${lang}`, exitCode: 1, language: lang, version: '' };
+                result = {
+                    stdout: '',
+                    stderr: `Language not supported for execution. Only Java (.java) and Python (.py) are supported.`,
+                    exitCode: 1,
+                    language: lang,
+                    version: '',
+                    command: 'execution blocked',
+                };
             }
             setExecutionOutput(result);
         } catch (err) {
@@ -463,7 +470,7 @@ export default function EditorPage() {
                 <div className="flex items-center gap-2 min-w-0">
                     <Link
                         to={`/app/workspace/${workspaceId}`}
-                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main text-[11px] font-medium transition shrink-0"
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-fill-subtle hover:bg-fill-subtle-hover text-text-sub hover:text-text-main text-[11px] font-medium transition shrink-0"
                         title="Back to workspace overview"
                     >
                         <ArrowLeft size={13} />
@@ -476,7 +483,7 @@ export default function EditorPage() {
                     <button
                         type="button"
                         onClick={() => setExplorerOpen(p => !p)}
-                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 transition shrink-0"
+                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-fill-subtle transition shrink-0"
                         title={explorerOpen ? 'Hide Explorer' : 'Show Explorer'}
                     >
                         {explorerOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
@@ -514,7 +521,7 @@ export default function EditorPage() {
                         type="button"
                         onClick={() => setCommitDialogOpen(true)}
                         disabled={!canCommit}
-                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-main text-[11px] font-medium transition disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-fill-subtle hover:bg-fill-subtle-hover text-text-main text-[11px] font-medium transition disabled:opacity-50"
                         title={canCommit ? 'Commit changes' : 'No permission'}
                     >
                         <GitCommit size={13} />
@@ -524,7 +531,7 @@ export default function EditorPage() {
                     <button
                         type="button"
                         onClick={() => setCommitsOpen(p => !p)}
-                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-sub hover:text-text-main text-[11px] font-medium transition"
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-fill-subtle hover:bg-fill-subtle-hover text-text-sub hover:text-text-main text-[11px] font-medium transition"
                         title="Commit history"
                     >
                         <History size={13} />
@@ -535,7 +542,7 @@ export default function EditorPage() {
                         type="button"
                         onClick={handleDownloadCurrentFile}
                         disabled={!activeTabId || downloadingFile}
-                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 transition disabled:opacity-50"
+                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-fill-subtle transition disabled:opacity-50"
                         title="Download file"
                     >
                         <Download size={13} />
@@ -545,7 +552,7 @@ export default function EditorPage() {
                         type="button"
                         onClick={handleDownloadRepo}
                         disabled={downloadingRepo || files.length === 0}
-                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6 transition disabled:opacity-50"
+                        className="h-7 w-7 rounded-[10px] flex items-center justify-center text-text-sub hover:text-text-main hover:bg-fill-subtle transition disabled:opacity-50"
                         title="Download zip"
                     >
                         <FolderDown size={13} />
@@ -555,7 +562,7 @@ export default function EditorPage() {
                         type="button"
                         onClick={handleSave}
                         disabled={!activeTabId || saving || !canEditFiles}
-                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-black/5 dark:bg-white/6 hover:bg-black/8 dark:hover:bg-white/10 text-text-main text-[11px] font-medium transition disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[10px] bg-fill-subtle hover:bg-fill-subtle-hover text-text-main text-[11px] font-medium transition disabled:opacity-50"
                         title="Save file (Ctrl+S / Cmd+S)"
                     >
                         {!canEditFiles ? <Lock size={13} /> : <Save size={13} />}
@@ -568,7 +575,7 @@ export default function EditorPage() {
                         onClick={handleRunCode}
                         disabled={!activeTabId || running}
                         className="inline-flex items-center justify-center gap-1.5 h-7 px-3.5 rounded-[10px] bg-accent text-on-accent text-[11px] font-semibold transition hover:brightness-105 active:scale-[0.98] disabled:opacity-50 shrink-0 shadow-sm"
-                        title="Run code in browser/container"
+                        title="Run code (Java & Python sandbox only)"
                     >
                         {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} className="fill-current" />}
                         <span>{running ? 'Running...' : 'Run'}</span>
@@ -591,7 +598,7 @@ export default function EditorPage() {
                         <button
                             type="button"
                             onClick={() => setCommitDialogOpen(false)}
-                            className="px-3 py-1.5 rounded-[10px] text-xs text-text-sub hover:bg-black/5 dark:hover:bg-white/6"
+                            className="px-3 py-1.5 rounded-[10px] text-xs text-text-sub hover:bg-fill-subtle"
                         >
                             Cancel
                         </button>
@@ -620,7 +627,7 @@ export default function EditorPage() {
                                 <button
                                     type="button"
                                     onClick={() => handleCreateFile(null)}
-                                    className="p-1 rounded-[6px] hover:bg-black/5 dark:hover:bg-white/6 text-text-sub hover:text-text-main"
+                                    className="p-1 rounded-[6px] hover:bg-fill-subtle text-text-sub hover:text-text-main"
                                     title="New File"
                                 >
                                     <Plus size={14} />
@@ -628,7 +635,7 @@ export default function EditorPage() {
                                 <button
                                     type="button"
                                     onClick={() => handleCreateFolder(null)}
-                                    className="p-1 rounded-[6px] hover:bg-black/5 dark:hover:bg-white/6 text-text-sub hover:text-text-main"
+                                    className="p-1 rounded-[6px] hover:bg-fill-subtle text-text-sub hover:text-text-main"
                                     title="New Folder"
                                 >
                                     <FolderPlus size={14} />
@@ -671,7 +678,7 @@ export default function EditorPage() {
                                     className={`group flex items-center gap-2 h-7 px-3 text-xs rounded-[8px] cursor-pointer transition select-none mr-1 ${
                                         isActive
                                             ? 'bg-canvas text-text-main font-medium border border-border-subtle'
-                                            : 'text-text-sub hover:text-text-main hover:bg-black/5 dark:hover:bg-white/6'
+                                            : 'text-text-sub hover:text-text-main hover:bg-fill-subtle'
                                     }`}
                                 >
                                     <span className="truncate max-w-[120px]">{tab.name}</span>
@@ -787,6 +794,9 @@ export default function EditorPage() {
                     <footer className="h-6 shrink-0 bg-subtle border-t border-border-subtle px-3 flex items-center justify-between text-[11px] text-text-dim select-none">
                         <div className="flex items-center gap-3">
                             <span className="font-medium text-text-sub uppercase">{currentLanguage}</span>
+                            <span className="text-[10px] text-accent/80 font-mono hidden sm:inline">
+                                [Sandbox: Java & Python only]
+                            </span>
                             <span>UTF-8</span>
                             {showOutput ? (
                                 <button
@@ -835,9 +845,14 @@ export default function EditorPage() {
                             autoFocus
                             value={newItemName}
                             onChange={e => setNewItemName(e.target.value)}
-                            placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.java'}
+                            placeholder={fileFormType === 'folder' ? 'folder-name' : 'e.g. Main.java or script.py'}
                             className="w-full h-10 px-3 rounded-[10px] bg-black/[.03] dark:bg-white/5 border border-border-subtle text-xs text-text-main focus:outline-none focus:border-accent"
                         />
+                        {fileFormType === 'file' && (
+                            <p className="text-[11px] text-text-sub">
+                                Note: Only Java (.java) and Python (.py) are executable in the sandbox.
+                            </p>
+                        )}
                         {createError && (
                             <p className="text-xs text-semantic-danger">{createError}</p>
                         )}
@@ -845,7 +860,7 @@ export default function EditorPage() {
                             <button
                                 type="button"
                                 onClick={() => setFileFormOpen(false)}
-                                className="px-3 py-1.5 rounded-[10px] text-xs text-text-sub hover:bg-black/5 dark:hover:bg-white/6"
+                                className="px-3 py-1.5 rounded-[10px] text-xs text-text-sub hover:bg-fill-subtle"
                             >
                                 Cancel
                             </button>

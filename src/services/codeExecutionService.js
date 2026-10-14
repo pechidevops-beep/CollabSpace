@@ -5,20 +5,28 @@ import { supabase } from '../lib/supabaseClient';
  *
  * - Java & Python (multi-file, packages, imports):
  *     → Docker-based execution server at VITE_EXECUTION_SERVER_URL or http://localhost:4000/api/run
- * - All other languages (JS, C++, etc):
- *     → Judge0 CE free public instance
+ * - Other languages (Judge0 CE):
+ *     → Disabled by default behind FEATURE_FLAG_ENABLE_JUDGE0. Browser calls to Judge0 are eliminated.
  */
+
+// ─── Feature Flags ──────────────────────────────────────────────────────────
+/**
+ * Security feature flag: When false, all browser calls to external Judge0 APIs are disabled.
+ * Only Java and Python are executable via the authenticated execution server.
+ */
+export const FEATURE_FLAG_ENABLE_JUDGE0 = false;
 
 // ─── Docker Execution Server ───────────────────────────────────────────────
 const EXECUTION_SERVER_URL = import.meta.env.VITE_EXECUTION_SERVER_URL || 'http://localhost:4000/api/run';
 
 /**
- * Languages that should use the Docker execution engine (multi-file support)
+ * Supported execution languages
  */
+export const SUPPORTED_LANGUAGES = ['Java', 'Python'];
 const PROJECT_LANGUAGES = new Set(['java', 'python', 'py']);
 
 /**
- * Check if a file/language uses the Docker multi-file executor.
+ * Check if a file/language uses the Docker execution server.
  */
 export function isProjectLanguage(fileNameOrLang) {
     if (!fileNameOrLang) return false;
@@ -29,11 +37,12 @@ export function isProjectLanguage(fileNameOrLang) {
 }
 
 /**
- * Execute a full multi-file project using the Docker execution server.
+ * Execute a full project using the Docker execution server.
  *
  * @param {Object} params
  * @param {string} params.language - "java" or "python"
  * @param {Array<{path: string, content: string}>} params.files - All project files with paths
+ * @param {string} [params.stdin]
  * @returns {Promise<{stdout, stderr, exitCode, executionTime, language, version}>}
  */
 export async function executeProject({ language, files, stdin }) {
@@ -75,18 +84,10 @@ export async function executeProject({ language, files, stdin }) {
     };
 }
 
-// ─── Judge0 CE (single-file, all other languages) ──────────────────────────
-const JUDGE0_API = 'https://judge0-ce.p.rapidapi.com';
-const JUDGE0_HOST = 'judge0-ce.p.rapidapi.com';
-const JUDGE0_KEY = 'free'; // Free tier markers
-
-// Fallback: use a free community instance that doesn't require API keys
+// ─── Legacy Judge0 Implementation (Preserved behind feature flag) ─────────
 const JUDGE0_FREE_API = 'https://ce.judge0.com';
 
-// Language ID mapping for Judge0 CE
-// Full list: https://ce.judge0.com/languages
-const LANGUAGE_MAP = {
-    // Extension-based and name-based mappings → Judge0 language_id
+const LEGACY_LANGUAGE_MAP = {
     'java': { id: 62, name: 'Java (OpenJDK 13.0.1)' },
     'py': { id: 71, name: 'Python (3.8.1)' },
     'python': { id: 71, name: 'Python (3.8.1)' },
@@ -108,42 +109,17 @@ const LANGUAGE_MAP = {
     'swift': { id: 83, name: 'Swift (5.2.3)' },
     'kt': { id: 78, name: 'Kotlin (1.3.70)' },
     'kotlin': { id: 78, name: 'Kotlin (1.3.70)' },
-    'r': { id: 80, name: 'R (4.0.0)' },
-    'lua': { id: 64, name: 'Lua (5.3.5)' },
-    'pl': { id: 85, name: 'Perl (5.28.1)' },
-    'perl': { id: 85, name: 'Perl (5.28.1)' },
-    'sh': { id: 46, name: 'Bash (5.0.0)' },
-    'bash': { id: 46, name: 'Bash (5.0.0)' },
-    'scala': { id: 81, name: 'Scala (2.13.2)' },
-    'sql': { id: 82, name: 'SQL (SQLite 3.27.2)' },
-    'html': null, // Not executable
-    'css': null,  // Not executable
-    'json': null, // Not executable
-    'md': null,   // Not executable
-    'txt': null,  // Not executable
 };
 
-/**
- * Resolve a file name or language string to Judge0 language ID
- */
-function resolveLanguage(fileNameOrLang) {
+function resolveLegacyLanguage(fileNameOrLang) {
     if (!fileNameOrLang) return null;
-
     const lower = fileNameOrLang.toLowerCase();
-
-    // Try direct match first (e.g. "python", "java")
-    if (LANGUAGE_MAP[lower] !== undefined) return LANGUAGE_MAP[lower];
-
-    // Try file extension (e.g. "main.py" → "py")
+    if (LEGACY_LANGUAGE_MAP[lower] !== undefined) return LEGACY_LANGUAGE_MAP[lower];
     const ext = lower.split('.').pop();
-    if (ext && LANGUAGE_MAP[ext] !== undefined) return LANGUAGE_MAP[ext];
-
+    if (ext && LEGACY_LANGUAGE_MAP[ext] !== undefined) return LEGACY_LANGUAGE_MAP[ext];
     return null;
 }
 
-/**
- * Base64 encode a string
- */
 function btoa64(str) {
     try {
         return btoa(unescape(encodeURIComponent(str)));
@@ -152,9 +128,6 @@ function btoa64(str) {
     }
 }
 
-/**
- * Base64 decode a string
- */
 function atob64(str) {
     if (!str) return '';
     try {
@@ -165,31 +138,33 @@ function atob64(str) {
 }
 
 /**
- * Execute code using Judge0 CE API
- * @param {Object} params
- * @param {string} params.code - Source code to execute
- * @param {string} params.language - Language name or file name with extension
- * @param {string} [params.stdin] - Standard input to pass to the program
- * @returns {Promise<{stdout: string, stderr: string, exitCode: number, language: string, version: string}>}
+ * Single-file execution entrypoint.
+ * If Judge0 feature flag is disabled, browser calls are completely removed.
  */
 export async function executeCode({ code, language, stdin = '' }) {
-    const resolved = resolveLanguage(language);
-    if (!resolved) {
-        const supported = Object.entries(LANGUAGE_MAP)
-            .filter(([k, v]) => v !== null && k.length > 2)
-            .map(([k]) => k)
-            .join(', ');
+    if (!FEATURE_FLAG_ENABLE_JUDGE0) {
+        if (isProjectLanguage(language)) {
+            const ext = language.toLowerCase().endsWith('.py') ? 'py' : 'java';
+            return await executeProject({
+                language,
+                files: [{ path: `Main.${ext}`, content: code }],
+                stdin,
+            });
+        }
         throw new Error(
-            `Unsupported language: "${language}". Supported: ${supported}`
+            'Browser calls to Judge0 are disabled. Only Java (.java) and Python (.py) are supported via the secure sandbox.'
         );
     }
 
-    // Submit the code for execution
+    // ── Legacy Judge0 Execution Path (Only executed when FEATURE_FLAG_ENABLE_JUDGE0 is explicitly true) ──
+    const resolved = resolveLegacyLanguage(language);
+    if (!resolved) {
+        throw new Error(`Unsupported language: "${language}".`);
+    }
+
     const submitResponse = await fetch(`${JUDGE0_FREE_API}/submissions?base64_encoded=true&wait=true`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             language_id: resolved.id,
             source_code: btoa64(code),
@@ -206,53 +181,14 @@ export async function executeCode({ code, language, stdin = '' }) {
     }
 
     const result = await submitResponse.json();
-
-    // If we didn't get the result immediately (wait=true should handle it),
-    // poll for it
-    if (result.token && !result.status) {
-        return await pollResult(result.token);
-    }
-
-    return formatResult(result);
+    return formatLegacyResult(result);
 }
 
-/**
- * Poll for execution result using token
- */
-async function pollResult(token) {
-    const maxAttempts = 20;
-    for (let i = 0; i < maxAttempts; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const response = await fetch(
-            `${JUDGE0_FREE_API}/submissions/${token}?base64_encoded=true`,
-            { headers: { 'Content-Type': 'application/json' } }
-        );
-
-        if (!response.ok) continue;
-
-        const result = await response.json();
-
-        // Status IDs: 1=In Queue, 2=Processing, 3=Accepted, 4+=Error/other
-        if (result.status && result.status.id > 2) {
-            return formatResult(result);
-        }
-    }
-
-    throw new Error('Execution timed out — the server took too long to respond.');
-}
-
-/**
- * Format Judge0 result into our standard output format
- */
-function formatResult(result) {
+function formatLegacyResult(result) {
     const stdout = atob64(result.stdout || '');
     const stderr = atob64(result.stderr || '');
     const compileOutput = atob64(result.compile_output || '');
     const message = result.message || '';
-
-    // Determine exit code from status
-    // Status 3 = Accepted (success), anything else = error
     const exitCode = result.status?.id === 3 ? 0 : (result.exit_code ?? 1);
 
     let finalStderr = stderr;
@@ -263,24 +199,21 @@ function formatResult(result) {
         finalStderr = (finalStderr ? finalStderr + '\n' : '') + message;
     }
 
-    // For TLE, MLE, etc. add the status description
-    if (result.status?.id > 4 && result.status?.description) {
-        finalStderr = (finalStderr ? finalStderr + '\n' : '') + `Status: ${result.status.description}`;
-    }
-
     return {
-        stdout: stdout,
+        stdout,
         stderr: finalStderr,
-        exitCode: exitCode,
+        exitCode,
         language: result.language?.name || '',
         version: '',
     };
 }
 
 /**
- * Check if a language is supported
+ * Check if a language is supported for execution
  */
 export function isLanguageSupported(language) {
-    const resolved = resolveLanguage(language);
-    return resolved !== null;
+    if (!FEATURE_FLAG_ENABLE_JUDGE0) {
+        return isProjectLanguage(language);
+    }
+    return resolveLegacyLanguage(language) !== null;
 }
