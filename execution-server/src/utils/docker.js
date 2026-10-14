@@ -34,10 +34,23 @@ function dockerRun(image, tempDir, command, options = {}) {
             '--network=none',            // No internet access
             '-v', `${normalizedDir}:/app`,  // Mount source files
             '--workdir', '/app',
-            image,
-            'sh', '-c',
-            Array.isArray(command) ? command.join(' && ') : command,
         ];
+
+        // Pass environment variables if specified
+        if (options.env && typeof options.env === 'object') {
+            for (const [key, val] of Object.entries(options.env)) {
+                dockerArgs.push('-e', `${key}=${val}`);
+            }
+        }
+
+        dockerArgs.push(image);
+
+        // When command is an argv array and not marked as shell, execute directly without sh -c
+        if (Array.isArray(command) && !options.shell) {
+            dockerArgs.push(...command);
+        } else {
+            dockerArgs.push('sh', '-c', Array.isArray(command) ? command.join(' && ') : command);
+        }
 
         // If stdin is provided, we need to pass -i flag for interactive input
         if (stdin) {
