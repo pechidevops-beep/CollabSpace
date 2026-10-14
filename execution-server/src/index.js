@@ -73,6 +73,8 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
+const { startupReaper, startReaperInterval } = require('./utils/reaper');
+
 if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
         console.log(`🚀 CollabSpace Execution Server running on port ${PORT}`);
@@ -80,6 +82,10 @@ if (process.env.NODE_ENV !== 'test') {
         console.log(`   Java image:   ${process.env.JAVA_IMAGE || 'collabspace-java'}`);
         console.log(`   Python image: ${process.env.PYTHON_IMAGE || 'collabspace-python'}`);
         console.log(`   Timeout:      ${process.env.EXECUTION_TIMEOUT_MS || 8000}ms`);
+
+        // Initialize Docker container reaper
+        startupReaper().catch(() => {});
+        startReaperInterval(60 * 1000);
     });
 }
 
