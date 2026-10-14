@@ -1,15 +1,28 @@
 const crypto = require('crypto');
+const jose = require('jose');
 
 // In-memory token verification cache: SHA-256(token) -> { user, expiresAt }
 // NOTE: Cache keys are cryptographically hashed tokens, never raw tokens
 const tokenCache = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 1 minute
 
+// Cached remote JWKS set instance
+let remoteJWKS = null;
+let currentJwksUrl = null;
+
 function getAuthConfig() {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const jwksUrl = process.env.SUPABASE_JWKS_URL ||
+        (supabaseUrl ? `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/.well-known/jwks.json` : null);
+
     return {
-        supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+        supabaseUrl,
         supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY,
         supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET,
+        supabaseJwksUrl: jwksUrl,
+        // Mode: 'secret' | 'jwks' | 'supabase_api'
+        authMode: process.env.JWT_AUTH_MODE ||
+            (process.env.SUPABASE_JWT_SECRET ? 'secret' : (jwksUrl ? 'jwks' : 'supabase_api')),
     };
 }
 
@@ -34,40 +47,28 @@ function pruneCache() {
 setInterval(pruneCache, 5 * 60 * 1000).unref();
 
 /**
- * Verifies a JWT signed with HMAC-SHA256.
- *
- * Enforces:
- *  - Explicit alg check (strictly HS256; rejects none and unexpected algorithms)
- *  - Constant-time signature comparison with crypto.timingSafeEqual
- *  - exp (expiration)
- *  - nbf (not before)
- *  - aud (audience: default "authenticated" for Supabase access tokens)
- *  - iss (issuer if configured)
- *
- * @param {string} token
- * @param {string} secret
- * @param {object} [options]
- * @returns {object} Decoded payload
+ * Get or initialize cached remote JWKS set
  */
-function verifyJwtSecret(token, secret, options = {}) {
-    if (!token || typeof token !== 'string') {
-        throw new Error('Token is required');
+function getRemoteJWKS(url) {
+    if (!remoteJWKS || currentJwksUrl !== url) {
+        remoteJWKS = jose.createRemoteJWKSet(new URL(url));
+        currentJwksUrl = url;
     }
+    return remoteJWKS;
+}
 
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-        throw new Error('Malformed JWT: must contain 3 parts');
-    }
-    const [headerB64, payloadB64, signatureB64] = parts;
-
+/**
+ * Validates header before full signature verification.
+ * Explicitly rejects alg: 'none' (case-insensitive) and unexpected algorithms.
+ */
+function validateProtectedHeader(token, allowedAlgs) {
     let header;
     try {
-        header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8'));
+        header = jose.decodeProtectedHeader(token);
     } catch {
         throw new Error('Malformed JWT header');
     }
 
-    // 1. Explicit algorithm validation: strictly HS256, reject 'none'
     if (!header || !header.alg || typeof header.alg !== 'string') {
         throw new Error('Missing JWT algorithm');
     }
@@ -76,55 +77,124 @@ function verifyJwtSecret(token, secret, options = {}) {
     if (alg.toLowerCase() === 'none') {
         throw new Error('JWT algorithm "none" is strictly forbidden');
     }
-    if (alg !== 'HS256') {
-        throw new Error(`Unsupported JWT algorithm "${alg}". Only HS256 is accepted.`);
+
+    if (!allowedAlgs.includes(alg)) {
+        throw new Error(`Unsupported JWT algorithm "${alg}". Expected one of: ${allowedAlgs.join(', ')}`);
     }
 
-    // 2. Verify HMAC-SHA256 signature with constant-time comparison
-    const expectedSig = crypto
-        .createHmac('sha256', secret)
-        .update(`${headerB64}.${payloadB64}`)
-        .digest('base64url');
+    return header;
+}
 
-    const sigBuf = Buffer.from(signatureB64);
-    const expBuf = Buffer.from(expectedSig);
-
-    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-        throw new Error('Invalid JWT signature');
+/**
+ * Verifies a JWT signed with HMAC-SHA256 using jose.
+ *
+ * @param {string} token
+ * @param {string} secret
+ * @param {object} [options]
+ * @returns {Promise<object>} Decoded payload
+ */
+async function verifyJwtSecret(token, secret, options = {}) {
+    if (!token || typeof token !== 'string') {
+        throw new Error('Token is required');
+    }
+    if (!secret || typeof secret !== 'string') {
+        throw new Error('Secret is required');
     }
 
-    let payload;
-    try {
-        payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    } catch {
-        throw new Error('Malformed JWT payload');
-    }
+    // 1. Explicit alg check (rejects none and unexpected algorithms)
+    validateProtectedHeader(token, ['HS256']);
 
-    const nowSeconds = Math.floor(Date.now() / 1000);
-
-    // 3. Expiration claim check (exp)
-    if (typeof payload.exp !== 'number' || payload.exp < nowSeconds) {
-        throw new Error('JWT has expired');
-    }
-
-    // 4. Not before claim check (nbf)
-    if (payload.nbf && typeof payload.nbf === 'number' && payload.nbf > nowSeconds) {
-        throw new Error('JWT is not active yet (nbf)');
-    }
-
-    // 5. Audience claim check (aud)
+    const secretKey = new TextEncoder().encode(secret);
     const expectedAudience = options.audience || process.env.SUPABASE_JWT_AUDIENCE || 'authenticated';
-    if (payload.aud !== expectedAudience) {
-        throw new Error(`Invalid JWT audience: expected "${expectedAudience}", got "${payload.aud}"`);
-    }
-
-    // 6. Issuer claim check (iss) if expectedIssuer configured
     const expectedIssuer = options.issuer || process.env.SUPABASE_JWT_ISSUER;
-    if (expectedIssuer && payload.iss !== expectedIssuer) {
-        throw new Error(`Invalid JWT issuer: expected "${expectedIssuer}", got "${payload.iss}"`);
+
+    try {
+        const verifyOptions = {
+            algorithms: ['HS256'],
+            audience: expectedAudience,
+        };
+        if (expectedIssuer) {
+            verifyOptions.issuer = expectedIssuer;
+        }
+
+        const { payload } = await jose.jwtVerify(token, secretKey, verifyOptions);
+        return payload;
+    } catch (err) {
+        if (err.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') {
+            throw new Error('Invalid JWT signature');
+        }
+        if (err.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
+            if (err.claim === 'aud') {
+                throw new Error(`Invalid JWT audience: expected "${expectedAudience}", got "${err.payload?.aud}"`);
+            }
+            if (err.claim === 'iss') {
+                throw new Error(`Invalid JWT issuer: expected "${expectedIssuer}", got "${err.payload?.iss}"`);
+            }
+            if (err.claim === 'nbf') {
+                throw new Error('JWT is not active yet (nbf)');
+            }
+        }
+        if (err.code === 'ERR_JWT_EXPIRED') {
+            throw new Error('JWT has expired');
+        }
+        throw new Error(err.message || 'JWT verification failed');
+    }
+}
+
+/**
+ * Verifies a JWT signed asymmetrically via JWKS using jose.
+ *
+ * @param {string} token
+ * @param {string|Function} jwksSource - JWKS URL string, or a jose JWKS function (e.g. createLocalJWKSet)
+ * @param {object} [options]
+ * @returns {Promise<object>} Decoded payload
+ */
+async function verifyJwtWithJwks(token, jwksSource, options = {}) {
+    if (!token || typeof token !== 'string') {
+        throw new Error('Token is required');
+    }
+    if (!jwksSource) {
+        throw new Error('JWKS source is required');
     }
 
-    return payload;
+    const allowedAlgs = options.algorithms || ['RS256', 'ES256'];
+    validateProtectedHeader(token, allowedAlgs);
+
+    const jwksResolver = typeof jwksSource === 'string' ? getRemoteJWKS(jwksSource) : jwksSource;
+    const expectedAudience = options.audience || process.env.SUPABASE_JWT_AUDIENCE || 'authenticated';
+    const expectedIssuer = options.issuer || process.env.SUPABASE_JWT_ISSUER;
+
+    try {
+        const verifyOptions = {
+            algorithms: allowedAlgs,
+            audience: expectedAudience,
+        };
+        if (expectedIssuer) {
+            verifyOptions.issuer = expectedIssuer;
+        }
+
+        const { payload } = await jose.jwtVerify(token, jwksResolver, verifyOptions);
+        return payload;
+    } catch (err) {
+        if (err.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') {
+            throw new Error('Invalid JWT signature');
+        }
+        if (err.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
+            if (err.claim === 'aud') {
+                throw new Error(`Invalid JWT audience: expected "${expectedAudience}", got "${err.payload?.aud}"`);
+            }
+            if (err.claim === 'iss') {
+                throw new Error(`Invalid JWT issuer: expected "${expectedIssuer}", got "${err.payload?.iss}"`);
+            }
+            if (err.claim === 'nbf') {
+                throw new Error('JWT is not active yet (nbf)');
+            }
+        }
+        if (err.code === 'ERR_JWT_EXPIRED') {
+            throw new Error('JWT has expired');
+        }
+        throw new Error(err.message || 'JWKS verification failed');
+    }
 }
 
 /**
@@ -204,23 +274,32 @@ async function requireAuth(req, res, next) {
             return next();
         }
 
-        const { supabaseUrl, supabaseAnonKey, supabaseJwtSecret } = getAuthConfig();
+        const authConfig = getAuthConfig();
         let user;
 
-        // Path 1: Local JWT secret verification (preferred for performance and offline reliability)
-        if (supabaseJwtSecret) {
-            const payload = verifyJwtSecret(token, supabaseJwtSecret);
+        if (authConfig.authMode === 'jwks' && authConfig.supabaseJwksUrl) {
+            // Path 1: Asymmetric JWKS verification via jose
+            const payload = await verifyJwtWithJwks(token, authConfig.supabaseJwksUrl);
             user = {
                 id: payload.sub,
                 email: payload.email,
                 role: payload.role,
                 ...payload,
             };
-        } else if (supabaseUrl && supabaseAnonKey) {
-            // Path 2: Supabase Auth REST verification (used when JWT secret is not configured)
+        } else if (authConfig.supabaseJwtSecret) {
+            // Path 2: Legacy HS256 secret verification via jose
+            const payload = await verifyJwtSecret(token, authConfig.supabaseJwtSecret);
+            user = {
+                id: payload.sub,
+                email: payload.email,
+                role: payload.role,
+                ...payload,
+            };
+        } else if (authConfig.supabaseUrl && authConfig.supabaseAnonKey) {
+            // Path 3: Supabase Auth REST verification fallback
             user = await verifyWithSupabase(token);
         } else {
-            console.error('[auth] Neither SUPABASE_JWT_SECRET nor SUPABASE_URL/ANON_KEY is configured.');
+            console.error('[auth] Neither SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, nor SUPABASE_URL/ANON_KEY is configured.');
             return res.status(500).json({
                 error: 'Server auth configuration error.',
             });
@@ -246,7 +325,9 @@ async function requireAuth(req, res, next) {
 module.exports = {
     requireAuth,
     verifyJwtSecret,
+    verifyJwtWithJwks,
     verifyWithSupabase,
     hashToken,
     tokenCache,
+    getAuthConfig,
 };
