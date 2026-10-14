@@ -135,12 +135,12 @@ function dockerRun(image, tempDir, command, options = {}) {
                 cleanupAndResolve('cancelled', 130);
                 return;
             }
-            options.signal.addEventListener('abort', () => {
+            options.signal.addEventListener('abort', async () => {
                 if (!killed) {
                     killed = true;
                     killReason = 'client_cancel';
                     proc.kill('SIGKILL');
-                    killContainer(containerName).catch(() => {});
+                    await killContainer(containerName).catch(() => {});
                 }
             }, { once: true });
         }
