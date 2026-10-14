@@ -12,16 +12,20 @@ const SAFE_PATH_RE = /^[a-zA-Z0-9_\-./]+$/;
 
 /**
  * Creates an isolated temp directory for this execution run.
+ * Sets directory permission mode to 0755 so container user (uid 999) can read it on Linux.
+ *
  * @param {string} runId - Unique UUID for this run
  * @returns {Promise<string>} Absolute path to the temp directory
  */
 async function createTempDir(runId) {
-    // runId is a UUID generated server-side; validate format anyway
     if (!/^[0-9a-f\-]{36}$/i.test(runId)) {
         throw new Error('Invalid run ID format.');
     }
     const dir = path.join(os.tmpdir(), `collabspace-${runId}`);
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+    try {
+        fs.chmodSync(dir, 0o755);
+    } catch { /* ignore on OS without POSIX mode */ }
     return dir;
 }
 
@@ -43,10 +47,10 @@ function safePath(baseDir, filePath) {
 
     // 1. Reject null bytes
     if (filePath.includes('\0')) {
-        throw new Error(`Null byte in file path: "${filePath}"`);
+        throw new Error(`Null byte detected in file path: "${filePath}"`);
     }
 
-    // 2. Reject absolute paths (Windows drive letters or UNC)
+    // 2. Reject absolute paths (Windows drive letters, UNC, POSIX root)
     if (/^[A-Za-z]:/.test(filePath) || filePath.startsWith('//') || filePath.startsWith('\\\\')) {
         throw new Error(`Absolute path not allowed: "${filePath}"`);
     }
@@ -99,8 +103,29 @@ function safePath(baseDir, filePath) {
 }
 
 /**
- * Returns the canonical Java file path if a public class name does not match the filename.
- * E.g., jav.java containing "public class HelloWorld" -> HelloWorld.java
+ * Strips comments and string/character literals from Java code before regex matching.
+ * Handles single-line comments, block comments, standard string literals, and text blocks.
+ *
+ * @param {string} code
+ * @returns {string} Code with comments and string literals replaced with spaces
+ */
+function stripCommentsAndStrings(code) {
+    if (typeof code !== 'string') return '';
+    return code.replace(
+        /("""[\s\S]*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*)/g,
+        ' '
+    );
+}
+
+/**
+ * Returns the canonical Java file path if a public class/interface/enum/record
+ * does not match the filename.
+ *
+ * Features:
+ * - Strips comments and string literals to prevent false positives.
+ * - Handles modifiers: final, abstract, sealed, non-sealed, strictfp.
+ * - Handles types: class, interface, enum, record.
+ * - Returns relative path matching the declared public type name.
  *
  * @param {string} filePath - User-supplied relative path
  * @param {string} content - File content
@@ -111,24 +136,32 @@ function getJavaCanonicalPath(filePath, content) {
         return filePath;
     }
 
-    const classMatch = content.match(/public\s+(?:final\s+|abstract\s+)*(?:class|interface|enum|record)\s+([A-Za-z0-9_$]+)/);
-    if (!classMatch) return filePath;
+    const sanitized = stripCommentsAndStrings(content);
 
-    const publicClassName = classMatch[1];
+    // Matches any combination of modifiers (final, abstract, sealed, non-sealed, strictfp)
+    // with "public" in any position before class | interface | enum | record <Name>
+    const typeRegex = /\b(?:(?:final|abstract|sealed|non-sealed|strictfp)\s+)*public\s+(?:(?:final|abstract|sealed|non-sealed|strictfp)\s+)*(?:class|interface|enum|record)\s+([A-Za-z0-9_$]+)/;
+    const match = sanitized.match(typeRegex);
+    if (!match) return filePath;
+
+    const publicTypeName = match[1];
     const currentBaseName = path.basename(filePath, '.java');
 
-    if (currentBaseName === publicClassName) {
+    if (currentBaseName === publicTypeName) {
         return filePath;
     }
 
     const dir = path.dirname(filePath).replace(/\\/g, '/');
-    return dir === '.' ? `${publicClassName}.java` : `${dir}/${publicClassName}.java`;
+    return dir === '.' ? `${publicTypeName}.java` : `${dir}/${publicTypeName}.java`;
 }
 
 /**
  * Writes all project files to disk, recreating the full folder structure.
  * Validates every path, enforces file count and size limits, rejects symlinks,
- * and canonicalizes Java filenames to match their public class names.
+ * canonicalizes Java filenames to match their public type names, and returns
+ * a clear error instead of overwriting if a canonical target name already exists.
+ *
+ * Explicitly sets directory permissions to 0755 and file permissions to 0644.
  *
  * @param {string} baseDir - Temp directory root
  * @param {Array<{path: string, content: string}>} files
@@ -143,37 +176,50 @@ async function writeFiles(baseDir, files) {
     }
 
     let totalBytes = 0;
+    const plannedTargets = new Map(); // targetPath -> originalPath
 
+    // ── Pre-flight Pass: Size checks and collision prevention ──────────────────
     for (const file of files) {
         if (!file.path || file.content === undefined) continue;
 
         const content = typeof file.content === 'string' ? file.content : String(file.content);
         const contentBytes = Buffer.byteLength(content, 'utf8');
 
-        // Per-file size check
         if (contentBytes > MAX_SINGLE_FILE_BYTES) {
             throw new Error(
                 `File "${file.path}" is ${contentBytes} bytes (max ${MAX_SINGLE_FILE_BYTES}).`
             );
         }
 
-        // Total size check
         totalBytes += contentBytes;
         if (totalBytes > MAX_TOTAL_BYTES) {
-            throw new Error(
-                `Total file size exceeds ${MAX_TOTAL_BYTES} bytes.`
-            );
+            throw new Error(`Total file size exceeds ${MAX_TOTAL_BYTES} bytes.`);
         }
 
-        // Determine target path: canonical ClassName.java for Java files
         const targetPath = getJavaCanonicalPath(file.path, content);
+        if (plannedTargets.has(targetPath)) {
+            const existing = plannedTargets.get(targetPath);
+            throw new Error(
+                `Canonical Java filename collision: file "${file.path}" maps to "${targetPath}", ` +
+                `which conflicts with "${existing}". Refusing to overwrite.`
+            );
+        }
+        plannedTargets.set(targetPath, file.path);
+    }
 
-        // Validate and resolve safe path
+    // ── Write Pass: Create directories (0755) and write files (0644) ───────────
+    for (const file of files) {
+        if (!file.path || file.content === undefined) continue;
+
+        const content = typeof file.content === 'string' ? file.content : String(file.content);
+        const targetPath = getJavaCanonicalPath(file.path, content);
         const fullPath = safePath(baseDir, targetPath);
 
-        // Create parent directories
         const dir = path.dirname(fullPath);
-        fs.mkdirSync(dir, { recursive: true });
+        fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        try {
+            fs.chmodSync(dir, 0o755);
+        } catch { /* ignore on non-POSIX filesystems */ }
 
         // Ensure directory does not escape sandbox via symlink
         const realDir = fs.realpathSync(dir);
@@ -190,11 +236,13 @@ async function writeFiles(baseDir, files) {
             }
         } catch (err) {
             if (err.code !== 'ENOENT') throw err;
-            // File doesn't exist yet, which is fine
         }
 
-        // Write file content
-        fs.writeFileSync(fullPath, content, { encoding: 'utf8', flag: 'w' });
+        // Write file with explicit 0644 mode
+        fs.writeFileSync(fullPath, content, { encoding: 'utf8', flag: 'w', mode: 0o644 });
+        try {
+            fs.chmodSync(fullPath, 0o644);
+        } catch { /* ignore on non-POSIX filesystems */ }
     }
 }
 
@@ -216,6 +264,7 @@ module.exports = {
     cleanup,
     safePath,
     getJavaCanonicalPath,
+    stripCommentsAndStrings,
     MAX_FILES,
     MAX_SINGLE_FILE_BYTES,
     MAX_TOTAL_BYTES,

@@ -10,6 +10,8 @@ const {
     writeFiles,
     cleanup,
     safePath,
+    getJavaCanonicalPath,
+    stripCommentsAndStrings,
     MAX_FILES,
     MAX_SINGLE_FILE_BYTES,
     MAX_TOTAL_BYTES,
@@ -112,5 +114,96 @@ test('fileSystem: writeFiles enforces file limits and cleans up correctly', asyn
     } finally {
         await cleanup(tempDir);
         assert.strictEqual(fs.existsSync(tempDir), false);
+    }
+});
+
+test('fileSystem: getJavaCanonicalPath handles modifiers (final, abstract, sealed, strictfp, non-sealed)', () => {
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public final class FinalService {}'),
+        'FinalService.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public abstract class AbstractBase {}'),
+        'AbstractBase.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public sealed class SealedShape permits Circle {}'),
+        'SealedShape.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public non-sealed class Circle extends SealedShape {}'),
+        'Circle.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public strictfp class MathUtil {}'),
+        'MathUtil.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'final public class ReversedOrder {}'),
+        'ReversedOrder.java'
+    );
+});
+
+test('fileSystem: getJavaCanonicalPath handles interface, enum, and record', () => {
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public interface Printable { void print(); }'),
+        'Printable.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public enum Direction { NORTH, SOUTH; }'),
+        'Direction.java'
+    );
+    assert.strictEqual(
+        getJavaCanonicalPath('foo.java', 'public record UserRecord(String id, String name) {}'),
+        'UserRecord.java'
+    );
+});
+
+test('fileSystem: getJavaCanonicalPath strips comments and string literals to prevent false matches', () => {
+    // 1. Comments containing false public class declarations should be ignored
+    const commentedCode = `
+        // public class FakeCommentedClass {
+        /*
+           public class BlockCommentedClass {
+        */
+        public class RealClass {
+            public static void main(String[] args) {}
+        }
+    `;
+    assert.strictEqual(getJavaCanonicalPath('temp.java', commentedCode), 'RealClass.java');
+
+    // 2. String literals containing false declarations should be ignored
+    const stringLiteralCode = `
+        public class StringContainer {
+            String fake = "public class FakeInString {}";
+            String block = """
+                public class FakeInTextBlock {}
+            """;
+        }
+    `;
+    assert.strictEqual(getJavaCanonicalPath('temp.java', stringLiteralCode), 'StringContainer.java');
+});
+
+test('fileSystem: writeFiles rejects collision when target canonical name already exists', async () => {
+    const runId = uuidv4();
+    const tempDir = await createTempDir(runId);
+    try {
+        const conflictingFiles = [
+            {
+                path: 'HelloWorld.java',
+                content: 'public class HelloWorld { public static void main(String[] args) {} }',
+            },
+            {
+                path: 'another.java',
+                content: 'public class HelloWorld { /* duplicate class name */ }',
+            },
+        ];
+
+        await assert.rejects(
+            () => writeFiles(tempDir, conflictingFiles),
+            /Canonical Java filename collision/
+        );
+    } finally {
+        await cleanup(tempDir);
     }
 });
