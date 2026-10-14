@@ -18,7 +18,7 @@ const { concurrencyLimiter } = require('../middleware/concurrency');
  * POST /api/run
  * Protected by: requireAuth, rateLimiter, concurrencyLimiter
  * Body: { language: "java"|"python", files: [{ path, content }], stdin?: string }
- * Returns: { stdout, stderr, exitCode, executionTime }
+ * Returns: { stdout, stderr, exitCode, executionTime, status }
  */
 router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
     const { language, files, stdin } = req.body;
@@ -31,6 +31,7 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
             stderr: 'Invalid request: language and files are required.',
             exitCode: 1,
             executionTime: 0,
+            status: 'compile_error',
         });
     }
 
@@ -42,6 +43,7 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
             stderr: `File count limit exceeded: ${files.length}/${MAX_FILES}`,
             exitCode: 1,
             executionTime: 0,
+            status: 'compile_error',
         });
     }
 
@@ -55,6 +57,7 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
                 stderr: 'Invalid file entry: path is required.',
                 exitCode: 1,
                 executionTime: 0,
+                status: 'compile_error',
             });
         }
         const contentStr = typeof f.content === 'string' ? f.content : String(f.content || '');
@@ -66,6 +69,7 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
                 stderr: `File "${f.path}" too large (${Math.round(byteLen / 1024)} KB).`,
                 exitCode: 1,
                 executionTime: 0,
+                status: 'compile_error',
             });
         }
         totalBytes += byteLen;
@@ -76,6 +80,7 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
                 stderr: `Total project size too large (${Math.round(totalBytes / 1024)} KB).`,
                 exitCode: 1,
                 executionTime: 0,
+                status: 'compile_error',
             });
         }
     }
@@ -88,30 +93,49 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
             stderr: `Unsupported language: "${language}". Docker executor supports: java, python.`,
             exitCode: 1,
             executionTime: 0,
+            status: 'compile_error',
         });
     }
 
     const runId = uuidv4();
     let tempDir = null;
 
+    // Cancellation support: kill container if client closes connection
+    const abortController = new AbortController();
+    req.on('close', () => {
+        if (!res.writableEnded) {
+            abortController.abort();
+        }
+    });
+
     try {
         // 1. Create isolated temp directory
         tempDir = await createTempDir(runId);
 
-        // 2. Write all project files recreating folder structure
+        // 2. Write all project files recreating folder structure (with Java class name canonicalization)
         await writeFiles(tempDir, files);
 
         // 3. Execute inside Docker
         let result;
         if (lang === 'java') {
-            result = await javaExecutor.run(tempDir, { stdin });
+            result = await javaExecutor.run(tempDir, {
+                stdin,
+                runId,
+                signal: abortController.signal,
+            });
         } else {
-            result = await pythonExecutor.run(tempDir, files, { stdin });
+            result = await pythonExecutor.run(tempDir, files, {
+                stdin,
+                runId,
+                signal: abortController.signal,
+            });
         }
 
+        if (res.writableEnded) return;
         return res.json(result);
 
     } catch (err) {
+        if (res.writableEnded) return;
         console.error(`[${runId}] Execution error:`, err.message);
         return res.status(500).json({
             error: err.message || 'Internal execution error.',
@@ -119,6 +143,7 @@ router.post('/', rateLimiter, concurrencyLimiter, async (req, res) => {
             stderr: err.message || 'Internal execution error.',
             exitCode: 1,
             executionTime: 0,
+            status: 'error',
         });
     } finally {
         // 4. Always clean up temp directory

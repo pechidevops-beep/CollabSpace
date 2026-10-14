@@ -1,7 +1,28 @@
 const { spawn } = require('child_process');
 
 const REAP_LABEL = 'collabspace=true';
-const DEFAULT_MAX_AGE_MS = 60 * 1000; // Containers older than 60s are considered stale
+
+const COMPILE_TIMEOUT_MS = parseInt(process.env.COMPILE_TIMEOUT_MS || '15000', 10);
+const RUN_TIMEOUT_MS = parseInt(process.env.RUN_TIMEOUT_MS || '10000', 10);
+const REAP_MARGIN_MS = parseInt(process.env.REAP_MARGIN_MS || '30000', 10);
+
+// Total maximum execution window + safety margin
+const DEFAULT_MAX_AGE_MS = COMPILE_TIMEOUT_MS + RUN_TIMEOUT_MS + REAP_MARGIN_MS;
+
+// Active in-flight containers set: containerName -> timestamp
+const inFlightContainers = new Set();
+
+function registerInFlight(containerName) {
+    if (containerName) {
+        inFlightContainers.add(containerName);
+    }
+}
+
+function unregisterInFlight(containerName) {
+    if (containerName) {
+        inFlightContainers.delete(containerName);
+    }
+}
 
 /**
  * Runs a docker command and returns stdout as string.
@@ -10,11 +31,10 @@ const DEFAULT_MAX_AGE_MS = 60 * 1000; // Containers older than 60s are considere
 function execDocker(args) {
     return new Promise((resolve) => {
         let stdout = '';
-        let stderr = '';
         try {
             const proc = spawn('docker', args);
             proc.stdout.on('data', (d) => { stdout += d.toString(); });
-            proc.stderr.on('data', (d) => { stderr += d.toString(); });
+            proc.stderr.on('data', () => {});
             proc.on('close', (code) => {
                 if (code === 0) resolve(stdout.trim());
                 else resolve('');
@@ -32,20 +52,23 @@ function execDocker(args) {
  */
 async function killContainer(containerName) {
     if (!containerName || !containerName.startsWith('collabspace-')) return;
+    unregisterInFlight(containerName);
     await execDocker(['rm', '-f', containerName]);
 }
 
 /**
- * Reaps all collabspace containers.
- * If all=true, kills every collabspace container (used at startup).
- * If all=false, kills containers older than maxAgeMs.
+ * Reaps orphaned collabspace containers.
+ * Criteria:
+ *  1. Must have label collabspace=true.
+ *  2. Must NOT be in inFlightContainers set.
+ *  3. In periodic mode, must be older than (max compile timeout + max run timeout + margin).
+ *  4. In startup mode (all=true), removes any leftover containers from previous server runs.
  *
  * @param {boolean} [all=false]
  * @param {number} [maxAgeMs=DEFAULT_MAX_AGE_MS]
  * @returns {Promise<number>} Number of reaped containers
  */
 async function reapContainers(all = false, maxAgeMs = DEFAULT_MAX_AGE_MS) {
-    // List all container IDs with the collabspace label
     const output = await execDocker([
         'ps', '-a',
         '--filter', `label=${REAP_LABEL}`,
@@ -61,19 +84,23 @@ async function reapContainers(all = false, maxAgeMs = DEFAULT_MAX_AGE_MS) {
         const [id, createdAt, name] = line.split('\t');
         if (!id) continue;
 
+        // Never reap a container that is currently in-flight
+        if (inFlightContainers.has(name) || inFlightContainers.has(id)) {
+            continue;
+        }
+
         if (all) {
             toRemove.push(id);
         } else {
-            // Check container age
             const createdTime = Date.parse(createdAt);
-            if (isNaN(createdTime) || Date.now() - createdTime > maxAgeMs) {
+            if (!isNaN(createdTime) && (Date.now() - createdTime > maxAgeMs)) {
                 toRemove.push(id);
             }
         }
     }
 
     if (toRemove.length > 0) {
-        console.log(`[reaper] Cleaning up ${toRemove.length} stale container(s)...`);
+        console.log(`[reaper] Removing ${toRemove.length} stale container(s)...`);
         await execDocker(['rm', '-f', ...toRemove]);
     }
 
@@ -90,7 +117,6 @@ async function startupReaper() {
             console.log(`[reaper] Startup cleanup removed ${count} leftover container(s).`);
         }
     } catch (err) {
-        // Non-fatal if Docker is not currently running
         console.warn('[reaper] Startup cleanup check skipped:', err.message);
     }
 }
@@ -113,4 +139,8 @@ module.exports = {
     startupReaper,
     startReaperInterval,
     killContainer,
+    registerInFlight,
+    unregisterInFlight,
+    inFlightContainers,
+    DEFAULT_MAX_AGE_MS,
 };

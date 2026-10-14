@@ -99,8 +99,36 @@ function safePath(baseDir, filePath) {
 }
 
 /**
+ * Returns the canonical Java file path if a public class name does not match the filename.
+ * E.g., jav.java containing "public class HelloWorld" -> HelloWorld.java
+ *
+ * @param {string} filePath - User-supplied relative path
+ * @param {string} content - File content
+ * @returns {string} Canonical relative path
+ */
+function getJavaCanonicalPath(filePath, content) {
+    if (!filePath.endsWith('.java') || typeof content !== 'string') {
+        return filePath;
+    }
+
+    const classMatch = content.match(/public\s+(?:final\s+|abstract\s+)*(?:class|interface|enum|record)\s+([A-Za-z0-9_$]+)/);
+    if (!classMatch) return filePath;
+
+    const publicClassName = classMatch[1];
+    const currentBaseName = path.basename(filePath, '.java');
+
+    if (currentBaseName === publicClassName) {
+        return filePath;
+    }
+
+    const dir = path.dirname(filePath).replace(/\\/g, '/');
+    return dir === '.' ? `${publicClassName}.java` : `${dir}/${publicClassName}.java`;
+}
+
+/**
  * Writes all project files to disk, recreating the full folder structure.
- * Validates every path, enforces file count and size limits, and rejects symlinks.
+ * Validates every path, enforces file count and size limits, rejects symlinks,
+ * and canonicalizes Java filenames to match their public class names.
  *
  * @param {string} baseDir - Temp directory root
  * @param {Array<{path: string, content: string}>} files
@@ -137,8 +165,11 @@ async function writeFiles(baseDir, files) {
             );
         }
 
+        // Determine target path: canonical ClassName.java for Java files
+        const targetPath = getJavaCanonicalPath(file.path, content);
+
         // Validate and resolve safe path
-        const fullPath = safePath(baseDir, file.path);
+        const fullPath = safePath(baseDir, targetPath);
 
         // Create parent directories
         const dir = path.dirname(fullPath);
@@ -148,14 +179,14 @@ async function writeFiles(baseDir, files) {
         const realDir = fs.realpathSync(dir);
         const realBase = fs.realpathSync(baseDir);
         if (realDir !== realBase && !realDir.startsWith(realBase + path.sep)) {
-            throw new Error(`Symlink traversal detected in directory path: "${file.path}"`);
+            throw new Error(`Symlink traversal detected in directory path: "${targetPath}"`);
         }
 
         // Check for symlink at target (in case a prior file created one)
         try {
             const stat = fs.lstatSync(fullPath);
             if (stat.isSymbolicLink()) {
-                throw new Error(`Symlink detected at "${file.path}", refusing to write.`);
+                throw new Error(`Symlink detected at "${targetPath}", refusing to write.`);
             }
         } catch (err) {
             if (err.code !== 'ENOENT') throw err;
@@ -184,6 +215,7 @@ module.exports = {
     writeFiles,
     cleanup,
     safePath,
+    getJavaCanonicalPath,
     MAX_FILES,
     MAX_SINGLE_FILE_BYTES,
     MAX_TOTAL_BYTES,

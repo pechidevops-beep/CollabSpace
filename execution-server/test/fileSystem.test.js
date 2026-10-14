@@ -98,6 +98,17 @@ test('fileSystem: writeFiles enforces file limits and cleans up correctly', asyn
             fs.readFileSync(path.join(tempDir, 'pkg', 'sub', 'helper.py'), 'utf8'),
             'def f(): return 42'
         );
+
+        // Java canonicalization: jav.java with "public class HelloWorld" is written as HelloWorld.java
+        const javaFiles = [
+            {
+                path: 'jav.java',
+                content: 'public class HelloWorld { public static void main(String[] args) {} }',
+            },
+        ];
+        await writeFiles(tempDir, javaFiles);
+        assert.ok(fs.existsSync(path.join(tempDir, 'HelloWorld.java')), 'HelloWorld.java must exist on disk');
+        assert.strictEqual(fs.existsSync(path.join(tempDir, 'jav.java')), false, 'jav.java is mapped to HelloWorld.java so javac sees only ClassName.java');
     } finally {
         await cleanup(tempDir);
         assert.strictEqual(fs.existsSync(tempDir), false);

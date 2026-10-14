@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { dockerRun } = require('../utils/docker');
+const { dockerRun, COMPILE_TIMEOUT_MS, RUN_TIMEOUT_MS } = require('../utils/docker');
 
 const JAVA_IMAGE = process.env.JAVA_IMAGE || 'collabspace-java';
 
@@ -67,15 +67,20 @@ function findJavaFiles(dir) {
 }
 
 /**
- * Run a Java multi-file project inside Docker with hardened read-only sandbox.
- * Compiles with javac into /tmp/out (size-limited tmpfs) and runs the detected main class.
+ * Run a Java multi-file project inside Docker with separate compile and run steps.
+ *
+ * Step 1: Compile with javac (timeout: COMPILE_TIMEOUT_MS, default 15s)
+ * Step 2: Execute detected main class (timeout: RUN_TIMEOUT_MS, default 10s)
  *
  * @param {string} tempDir - Absolute path to temp directory containing project files
  * @param {Object} [options]
- * @returns {Promise<{stdout, stderr, exitCode, executionTime}>}
+ * @param {string} [options.stdin]
+ * @param {string} [options.runId]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<{stdout, stderr, exitCode, executionTime, status}>}
  */
 async function run(tempDir, options = {}) {
-    const { stdin, runId } = options;
+    const { stdin, runId, signal } = options;
     const mainClass = detectMainClass(tempDir);
 
     if (!mainClass) {
@@ -84,6 +89,7 @@ async function run(tempDir, options = {}) {
             stderr: 'Could not find a main class.\n\nMake sure one of your .java files contains:\n  public static void main(String[] args)',
             exitCode: 1,
             executionTime: 0,
+            status: 'compile_error',
         };
     }
 
@@ -93,28 +99,66 @@ async function run(tempDir, options = {}) {
             stderr: `Invalid Java class name: "${mainClass}".`,
             exitCode: 1,
             executionTime: 0,
+            status: 'compile_error',
         };
     }
 
-    console.log(`[Java] Detected main class: ${mainClass}`);
+    // Create a host outDir for compiled .class files
+    const outDir = path.join(tempDir, '.collabspace_out');
+    fs.mkdirSync(outDir, { recursive: true });
+    const normalizedOutDir = outDir.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1');
 
-    // Build command:
-    // 1. Make /tmp/out inside writable tmpfs (root and /app are --read-only)
-    // 2. Find all .java files under /app
-    // 3. Compile them into /tmp/out
-    // 4. Run main class with classpath pointing to /tmp/out and /app
-    const command = [
-        'mkdir -p /tmp/out',
+    // ── STEP 1: Compile ────────────────────────────────────────────────────────
+    const compileCmd = [
         'find /app -name "*.java" > /tmp/sources.txt',
-        'javac -d /tmp/out @/tmp/sources.txt 2>&1 || exit 1',
-        `java -cp /tmp/out:/app ${mainClass}`,
+        'javac -d /out @/tmp/sources.txt',
     ].join(' && ');
 
-    return await dockerRun(JAVA_IMAGE, tempDir, command, {
-        stdin,
-        runId,
+    const compileResult = await dockerRun(JAVA_IMAGE, tempDir, compileCmd, {
+        timeoutMs: COMPILE_TIMEOUT_MS,
+        runId: `${runId || 'run'}-compile`,
+        signal,
         shell: true,
+        isCompile: true,
+        extraMounts: [`${normalizedOutDir}:/out:rw`],
     });
+
+    if (compileResult.status === 'cancelled') {
+        return compileResult;
+    }
+
+    if (compileResult.status === 'timeout') {
+        return {
+            ...compileResult,
+            status: 'timeout',
+            stderr: 'Compilation timed out.\n' + compileResult.stderr,
+        };
+    }
+
+    if (compileResult.exitCode !== 0) {
+        return {
+            ...compileResult,
+            status: 'compile_error',
+        };
+    }
+
+    // ── STEP 2: Run ────────────────────────────────────────────────────────────
+    const runCmd = `java -cp /out:/app ${mainClass}`;
+
+    const execResult = await dockerRun(JAVA_IMAGE, tempDir, runCmd, {
+        stdin,
+        timeoutMs: RUN_TIMEOUT_MS,
+        runId: `${runId || 'run'}-exec`,
+        signal,
+        shell: true,
+        isCompile: false,
+        extraMounts: [`${normalizedOutDir}:/out:ro`], // Read-only during execution
+    });
+
+    return {
+        ...execResult,
+        executionTime: compileResult.executionTime + execResult.executionTime,
+    };
 }
 
 module.exports = { run, detectMainClass, JAVA_CLASS_RE };

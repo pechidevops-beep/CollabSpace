@@ -1,6 +1,6 @@
 # Java sandbox image for CollabSpace execution engine
-# eclipse-temurin is the official successor to openjdk Docker images
-FROM eclipse-temurin:17-jdk-jammy
+# Pinned to specific Eclipse Temurin JDK 17 release on Ubuntu Jammy (no :latest)
+FROM eclipse-temurin:17.0.10_7-jdk-jammy
 
 WORKDIR /app
 

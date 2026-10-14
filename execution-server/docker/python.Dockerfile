@@ -1,5 +1,6 @@
 # Python sandbox image for CollabSpace execution engine
-FROM python:3.11-slim
+# Pinned to specific Python 3.11 release on Debian Bookworm slim (no :latest)
+FROM python:3.11.8-slim-bookworm
 
 WORKDIR /app
 

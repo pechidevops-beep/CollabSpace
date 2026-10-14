@@ -1,5 +1,5 @@
 const path = require('path');
-const { dockerRun } = require('../utils/docker');
+const { dockerRun, COMPILE_TIMEOUT_MS, RUN_TIMEOUT_MS } = require('../utils/docker');
 
 const PYTHON_IMAGE = process.env.PYTHON_IMAGE || 'collabspace-python';
 
@@ -59,26 +59,78 @@ function detectEntryPoint(files) {
 
 /**
  * Run a Python multi-file project inside Docker.
- * Uses an argv array without shell invocation (sh -c) to eliminate command injection.
+ * Step 1: Pre-flight syntax validation (py_compile) -> returns compile_error if invalid.
+ * Step 2: Direct argv execution without sh -c -> returns ok, timeout, or oom_killed.
  *
  * @param {string} tempDir - Absolute path to temp directory
  * @param {Array<{path: string, content: string}>} files - All project files
  * @param {Object} [options]
  * @param {string} [options.stdin]
- * @returns {Promise<{stdout, stderr, exitCode, executionTime}>}
+ * @param {string} [options.runId]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<{stdout, stderr, exitCode, executionTime, status}>}
  */
 async function run(tempDir, files, options = {}) {
-    const { stdin } = options;
+    const { stdin, runId, signal } = options;
     const entryPoint = detectEntryPoint(files);
-    console.log(`[Python] Entry point: ${entryPoint}`);
 
-    // Direct argv execution without sh -c
+    // ── STEP 1: Syntax / Compilation Check (In-memory via ast.parse) ──────────
+    const compileResult = await dockerRun(
+        PYTHON_IMAGE,
+        tempDir,
+        ['python3', '-c', `import ast; ast.parse(open('/app/${entryPoint}', 'rb').read())`],
+        {
+            timeoutMs: Math.min(COMPILE_TIMEOUT_MS, 5000),
+            runId: `${runId || 'run'}-syntax`,
+            signal,
+            isCompile: true,
+            env: {
+                PYTHONPATH: '/app',
+                PYTHONDONTWRITEBYTECODE: '1',
+                PYTHONPYCACHEPREFIX: '/tmp/pycache',
+            },
+        }
+    );
+
+    if (compileResult.status === 'cancelled') {
+        return compileResult;
+    }
+
+    if (compileResult.status === 'timeout') {
+        return {
+            ...compileResult,
+            status: 'timeout',
+            stderr: 'Syntax check timed out.\n' + compileResult.stderr,
+        };
+    }
+
+    if (compileResult.exitCode !== 0) {
+        return {
+            ...compileResult,
+            status: 'compile_error',
+        };
+    }
+
+    // ── STEP 2: Execution ──────────────────────────────────────────────────────
     const argv = ['python3', '-u', `/app/${entryPoint}`];
 
-    return await dockerRun(PYTHON_IMAGE, tempDir, argv, {
+    const execResult = await dockerRun(PYTHON_IMAGE, tempDir, argv, {
         stdin,
-        env: { PYTHONPATH: '/app' },
+        timeoutMs: options.timeoutMs || RUN_TIMEOUT_MS,
+        runId: `${runId || 'run'}-exec`,
+        signal,
+        isCompile: false,
+        env: {
+            PYTHONPATH: '/app',
+            PYTHONDONTWRITEBYTECODE: '1',
+            PYTHONPYCACHEPREFIX: '/tmp/pycache',
+        },
     });
+
+    return {
+        ...execResult,
+        executionTime: compileResult.executionTime + execResult.executionTime,
+    };
 }
 
 module.exports = { run, detectEntryPoint, SAFE_PY_FILENAME_RE };
