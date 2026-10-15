@@ -10,7 +10,7 @@ import WorkspaceLayout from '../features/workspace/pages/WorkspaceLayout';
 import RepositoryPage from '../features/repository/pages/RepositoryPage';
 import AssignmentPage from '../features/classroom/pages/AssignmentPage';
 import ClassroomPage from '../features/classroom/pages/ClassroomPage';
-import EditorPage from '../features/editor/pages/EditorPage';
+const EditorPage = React.lazy(() => import('../features/editor/pages/EditorPage'));
 import WorkspacesPage from '../features/workspace/pages/WorkspacesPage';
 import SettingsPage from '../features/workspace/pages/SettingsPage';
 import NotFoundPage from './NotFoundPage';
@@ -59,7 +59,20 @@ export default function App() {
           <Route path="repo/:repoId" element={<RepositoryPage />} />
           <Route path="assessments" element={<ClassroomPage />} />
           <Route path="assessments/assignment/:assignmentId" element={<AssignmentPage />} />
-          <Route path="editor/:repoId" element={<EditorPage />} />
+          <Route
+            path="editor/:repoId"
+            element={
+              <React.Suspense
+                fallback={
+                  <div className="flex h-screen items-center justify-center text-xs text-text-dim">
+                    Loading editor session...
+                  </div>
+                }
+              >
+                <EditorPage />
+              </React.Suspense>
+            }
+          />
         </Route>
       </Route>
       <Route path="*" element={<NotFoundPage />} />
