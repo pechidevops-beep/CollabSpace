@@ -1,0 +1,113 @@
+-- Migration: 20261015000005_constraints_and_indexes.sql
+-- Description: Add missing indexes, drop redundant index, add strict CHECK constraints,
+-- set repositories.visibility default to 'private', and add activities to supabase_realtime publication.
+
+-- ============================================================================
+-- 1. INDEXES (CREATE MISSING & DROP REDUNDANT)
+-- ============================================================================
+
+-- Drop redundant index on grades (submission_id is already covered by grades_submission_id_key unique constraint)
+DROP INDEX IF EXISTS public.idx_grades_submission;
+
+-- Create missing high-value query and FK indexes
+CREATE INDEX IF NOT EXISTS idx_repositories_workspace ON public.repositories USING btree (workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON public.workspace_members USING btree (user_id);
+CREATE INDEX IF NOT EXISTS idx_repository_files_branch ON public.repository_files USING btree (branch_id);
+CREATE INDEX IF NOT EXISTS idx_commits_branch ON public.commits USING btree (branch_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_repository ON public.submissions USING btree (repository_id);
+CREATE INDEX IF NOT EXISTS idx_activities_workspace_created ON public.activities USING btree (workspace_id, created_at DESC);
+
+-- Unique index on repository files to prevent sibling collisions within the same directory / branch
+CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.repository_files (
+  repository_id,
+  COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  name
+);
+
+-- ============================================================================
+-- 2. CHECK CONSTRAINTS
+-- ============================================================================
+
+-- Workspace name length & charset (alphanumeric, spaces, hyphens, underscores, dots; 1-100 chars)
+ALTER TABLE public.workspaces
+  DROP CONSTRAINT IF EXISTS workspaces_name_format_check,
+  ADD CONSTRAINT workspaces_name_format_check
+  CHECK (
+    char_length(name) >= 1 AND
+    char_length(name) <= 100 AND
+    name ~ '^[a-zA-Z0-9_\-\. ]+$'
+  );
+
+-- Repository name length & charset (no spaces, standard slug-compatible repo names; 1-100 chars)
+ALTER TABLE public.repositories
+  DROP CONSTRAINT IF EXISTS repositories_name_format_check,
+  ADD CONSTRAINT repositories_name_format_check
+  CHECK (
+    char_length(name) >= 1 AND
+    char_length(name) <= 100 AND
+    name ~ '^[a-zA-Z0-9_\-\.]+$'
+  );
+
+-- Repository file names: consistent with execution-server safePath
+-- (no '/', '\', '.', '..', no control characters, max 100 chars)
+ALTER TABLE public.repository_files
+  DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
+  ADD CONSTRAINT repository_files_filename_safe_check
+  CHECK (
+    char_length(name) >= 1 AND
+    char_length(name) <= 100 AND
+    name NOT LIKE '%/%' AND
+    name NOT LIKE '%\%' AND
+    name <> '.' AND
+    name <> '..' AND
+    name !~ '[\x00-\x1f\x7f]'
+  );
+
+-- File content size limit (512 KB = 524,288 bytes)
+ALTER TABLE public.repository_files
+  DROP CONSTRAINT IF EXISTS repository_files_content_limit_check,
+  ADD CONSTRAINT repository_files_content_limit_check
+  CHECK (content IS NULL OR octet_length(content) <= 524288);
+
+-- Grade non-negative checks
+ALTER TABLE public.assignments
+  DROP CONSTRAINT IF EXISTS assignments_max_points_positive_check,
+  ADD CONSTRAINT assignments_max_points_positive_check
+  CHECK (max_points IS NULL OR max_points > 0);
+
+ALTER TABLE public.submissions
+  DROP CONSTRAINT IF EXISTS submissions_grade_non_negative_check,
+  ADD CONSTRAINT submissions_grade_non_negative_check
+  CHECK (grade IS NULL OR grade >= 0);
+
+ALTER TABLE public.grades
+  DROP CONSTRAINT IF EXISTS grades_grade_non_negative_check,
+  ADD CONSTRAINT grades_grade_non_negative_check
+  CHECK (grade IS NULL OR grade >= 0);
+
+-- ============================================================================
+-- 3. REPOSITORIES DEFAULT VISIBILITY -> 'private'
+-- ============================================================================
+
+-- Change default to 'private' without altering existing records
+ALTER TABLE public.repositories ALTER COLUMN visibility SET DEFAULT 'private';
+
+-- ============================================================================
+-- 4. REALTIME PUBLICATION FOR ACTIVITIES TABLE
+-- ============================================================================
+
+-- Rationale: The frontend service `activityService.js` subscribes to postgres_changes
+-- on table 'activities'. Without adding it to `supabase_realtime`, client activity feeds
+-- never receive live events. Realtime respects Row Level Security on the table.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'activities'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.activities;
+    END IF;
+  END IF;
+END $$;
