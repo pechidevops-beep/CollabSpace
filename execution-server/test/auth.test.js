@@ -78,6 +78,68 @@ test('auth: refuses to start if NODE_ENV === "production" and ALLOW_TEST_AUTH is
     }
 });
 
+test('auth: refuses to start outside dev/test if secret equals known local default', () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevSecret = process.env.SUPABASE_JWT_SECRET;
+    try {
+        process.env.NODE_ENV = 'production';
+        process.env.ALLOW_TEST_AUTH = 'false';
+        process.env.SUPABASE_JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-characters-in-it';
+
+        assert.throws(
+            () => validateServerEnvironment(),
+            /known local default/
+        );
+    } finally {
+        process.env.NODE_ENV = prevEnv;
+        process.env.SUPABASE_JWT_SECRET = prevSecret;
+    }
+});
+
+test('auth: refuses to start outside dev/test if any value starts with YOUR_', () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevAnon = process.env.SUPABASE_ANON_KEY;
+    try {
+        process.env.NODE_ENV = 'production';
+        process.env.ALLOW_TEST_AUTH = 'false';
+        process.env.SUPABASE_JWT_SECRET = 'a-valid-production-secret-value-12345';
+        process.env.SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+
+        assert.throws(
+            () => validateServerEnvironment(),
+            /contains placeholder value "YOUR_ANON_KEY"/
+        );
+    } finally {
+        process.env.NODE_ENV = prevEnv;
+        process.env.SUPABASE_ANON_KEY = prevAnon;
+    }
+});
+
+test('auth: refuses to start outside dev/test if SUPABASE_URL points at localhost or 127.0.0.1', () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevUrl = process.env.SUPABASE_URL;
+    try {
+        process.env.NODE_ENV = 'production';
+        process.env.ALLOW_TEST_AUTH = 'false';
+        process.env.SUPABASE_JWT_SECRET = 'a-valid-production-secret-value-12345';
+        process.env.SUPABASE_URL = 'http://127.0.0.1:54321';
+
+        assert.throws(
+            () => validateServerEnvironment(),
+            /SUPABASE_URL cannot point to localhost\/127\.0\.0\.1/
+        );
+
+        process.env.SUPABASE_URL = 'http://localhost:54321';
+        assert.throws(
+            () => validateServerEnvironment(),
+            /SUPABASE_URL cannot point to localhost\/127\.0\.0\.1/
+        );
+    } finally {
+        process.env.NODE_ENV = prevEnv;
+        process.env.SUPABASE_URL = prevUrl;
+    }
+});
+
 test('auth: rejects test-token when NODE_ENV === "production"', async () => {
     const prevEnv = process.env.NODE_ENV;
     try {

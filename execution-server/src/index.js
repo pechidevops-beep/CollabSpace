@@ -7,16 +7,59 @@ const runRouter = require('./routes/run');
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const KNOWN_LOCAL_JWT_SECRETS = new Set([
+    'super-secret-jwt-token-with-at-least-32-characters-in-it',
+    'your-super-secret-jwt-token-with-at-least-32-characters-long',
+]);
+
 /**
  * Validates security constraints before startup.
- * The server MUST refuse to start if NODE_ENV === 'production' and ALLOW_TEST_AUTH is set.
+ * - Refuses to start if NODE_ENV === 'production' and ALLOW_TEST_AUTH is set.
+ * - Outside "development" or "test", refuses to run if:
+ *     1. SUPABASE_JWT_SECRET equals the known local default
+ *     2. Any environment value starts with "YOUR_"
+ *     3. SUPABASE_URL points at 127.0.0.1 or localhost
  */
 function validateServerEnvironment() {
+    const nodeEnv = process.env.NODE_ENV;
+
     if (
-        process.env.NODE_ENV === 'production' &&
+        nodeEnv === 'production' &&
         (process.env.ALLOW_TEST_AUTH === 'true' || process.env.ALLOW_TEST_AUTH === '1')
     ) {
         throw new Error('FATAL: Refusing to start in production with ALLOW_TEST_AUTH enabled.');
+    }
+
+    if (nodeEnv !== 'development' && nodeEnv !== 'test') {
+        const secret = process.env.SUPABASE_JWT_SECRET;
+        if (secret && KNOWN_LOCAL_JWT_SECRETS.has(secret)) {
+            throw new Error('FATAL: Insecure configuration: SUPABASE_JWT_SECRET cannot use the known local default secret outside development/test.');
+        }
+
+        for (const [key, val] of Object.entries(process.env)) {
+            if (typeof val === 'string' && val.startsWith('YOUR_')) {
+                throw new Error(`FATAL: Insecure configuration: ${key} contains placeholder value "${val}".`);
+            }
+        }
+
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+        if (supabaseUrl) {
+            try {
+                const parsed = new URL(supabaseUrl);
+                if (
+                    parsed.hostname === '127.0.0.1' ||
+                    parsed.hostname === 'localhost' ||
+                    parsed.hostname === '0.0.0.0'
+                ) {
+                    throw new Error('FATAL: Insecure configuration: SUPABASE_URL cannot point to localhost/127.0.0.1 outside development/test.');
+                }
+            } catch (err) {
+                if (err.message.startsWith('FATAL:')) throw err;
+                if (supabaseUrl.includes('127.0.0.1') || supabaseUrl.includes('localhost')) {
+                    throw new Error('FATAL: Insecure configuration: SUPABASE_URL cannot point to localhost/127.0.0.1 outside development/test.');
+                }
+            }
+        }
     }
 }
 
