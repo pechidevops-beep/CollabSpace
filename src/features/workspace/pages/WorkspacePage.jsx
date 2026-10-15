@@ -80,8 +80,8 @@ export default function WorkspacePage() {
         if (!repoName.trim()) return;
         setCreatingRepo(true);
         try {
-            if (!['owner', 'maintainer'].includes(currentRole)) {
-                throw new Error('Only owners and maintainers can create repositories.');
+            if (!['owner', 'admin', 'contributor'].includes(currentRole)) {
+                throw new Error('Only owners, admins, and contributors can create repositories.');
             }
 
             const newRepo = await createRepository({
@@ -382,14 +382,14 @@ export default function WorkspacePage() {
                             const roleBadgeClass = {
                                 owner: 'text-semantic-warning bg-semantic-warning/10 border-semantic-warning/20',
                                 admin: 'text-accent bg-accent/10 border-accent/20',
-                                contributor: 'text-text-main bg-black/5 dark:bg-white/6 border-border-subtle',
-                                viewer: 'text-text-dim bg-black/5 dark:bg-white/6 border-border-subtle',
-                            }[m.role] || 'text-text-dim bg-black/5 dark:bg-white/6 border-border-subtle';
+                                contributor: 'text-text-main bg-fill-subtle border-border-subtle',
+                                viewer: 'text-text-dim bg-fill-subtle border-border-subtle',
+                            }[m.role] || 'text-text-dim bg-fill-subtle border-border-subtle';
 
                             return (
                                 <CardRow key={m.id} className="p-3.5 group hover:border-border-strong">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/6 flex items-center justify-center text-[11px] font-semibold text-text-main">
+                                        <div className="w-8 h-8 rounded-full bg-fill-subtle flex items-center justify-center text-[11px] font-semibold text-text-main">
                                             {(m.profiles?.full_name || m.profiles?.email || '?')[0].toUpperCase()}
                                         </div>
                                         <div>

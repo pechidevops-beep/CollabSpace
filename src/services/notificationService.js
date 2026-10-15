@@ -69,7 +69,29 @@ export async function markAllAsRead() {
 }
 
 /**
- * Create a notification (called from other services).
+ * Notify all members of a workspace via RPC (restricted to owner/admin).
+ */
+export async function notifyWorkspaceMembers({
+    workspaceId,
+    title,
+    message = null,
+    type = 'announcement',
+}) {
+    const { data, error } = await supabase.rpc('notify_workspace_members', {
+        workspace_id: workspaceId,
+        title,
+        message,
+        type,
+    });
+    if (error) {
+        console.warn('Failed to send workspace notification:', error.message);
+        throw error;
+    }
+    return data;
+}
+
+/**
+ * Create a notification (routes through notify_workspace_members RPC if workspaceId provided).
  */
 export async function createNotification({
     userId,
@@ -79,20 +101,21 @@ export async function createNotification({
     message = null,
     link = null,
 }) {
-    const { data, error } = await supabase
-        .from('notifications')
-        .insert({
-            user_id: userId,
-            workspace_id: workspaceId,
-            type,
-            title,
-            message,
-            link,
-        })
-        .select('*')
-        .maybeSingle();
-    if (error) throw error;
-    return data;
+    if (workspaceId) {
+        try {
+            return await notifyWorkspaceMembers({
+                workspaceId,
+                title,
+                message,
+                type,
+            });
+        } catch (rpcErr) {
+            console.warn('notify_workspace_members RPC failed:', rpcErr?.message);
+            return null;
+        }
+    }
+    // Direct client inserts are locked down under RLS; fail gracefully without throwing.
+    return null;
 }
 
 /**

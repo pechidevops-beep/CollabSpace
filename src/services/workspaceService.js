@@ -46,12 +46,21 @@ export async function getWorkspaceById(workspaceId) {
 }
 
 export async function getWorkspaceMembers(workspaceId) {
-  const { data, error } = await supabase
-    .from('workspace_members')
-    .select('*, profiles:user_id ( id, full_name, email )')
-    .eq('workspace_id', workspaceId);
+  const { data, error } = await supabase.rpc('list_workspace_members', {
+    workspace_id: workspaceId,
+  });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((m) => ({
+    id: m.user_id,
+    user_id: m.user_id,
+    role: m.role,
+    created_at: m.joined_date,
+    profiles: {
+      id: m.user_id,
+      full_name: m.full_name,
+      email: m.email,
+    },
+  }));
 }
 
 export async function getWorkspaceMemberRole(workspaceId, userId) {
@@ -72,102 +81,61 @@ export async function createWorkspace({ ownerId, name, type = 'team' }) {
       owner_id: ownerId,
       name,
       type,
-      join_code: generateJoinCode(),
     })
     .select('*')
     .maybeSingle();
 
-  if (insertError || !workspace) throw insertError ?? new Error('Failed to create workspace');
+  if (insertError || !workspace) {
+    const msg = insertError?.message?.includes('violates check constraint')
+      ? 'Workspace name must be between 1 and 100 characters and contain only letters, numbers, spaces, hyphens, and dots.'
+      : (insertError?.message ?? 'Failed to create workspace');
+    throw new Error(msg);
+  }
 
-  const { error: memberError } = await supabase.from('workspace_members').insert({
-    workspace_id: workspace.id,
-    user_id: ownerId,
-    role: 'owner',
-  });
-
-  if (memberError) throw memberError;
+  // Note: Database trigger `tr_workspace_created` automatically inserts owner into workspace_members.
 
   await logActivity({
     type: 'workspace_created',
     actorId: ownerId,
     workspaceId: workspace.id,
     message: `Workspace "${workspace.name}" was created.`,
-  });
+  }).catch(() => {});
 
   return workspace;
 }
 
 export async function joinWorkspace({ userId, codeOrId }) {
-  const raw = (codeOrId || '').trim();
-  const code = raw.toUpperCase();
-  const isJoinCodeFormat = /^TEAM-[A-Z0-9]{4}$/.test(code);
-  const isUuidFormat =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
-
-  if (!isJoinCodeFormat && !isUuidFormat) {
-    throw new Error('That does not look like a valid workspace code.');
+  const code = (codeOrId || '').trim();
+  if (!code) {
+    throw new Error('Please enter a workspace join code.');
   }
 
-  let workspace = null;
-
-  if (isJoinCodeFormat) {
-    const { data, error } = await supabase
-      .from('workspaces')
-      .select('id, name, type, created_at, join_code, owner_id')
-      .eq('join_code', code)
-      .maybeSingle();
-    if (error) throw error;
-    workspace = data;
-  } else {
-    const { data, error } = await supabase
-      .from('workspaces')
-      .select('id, name, type, created_at, join_code, owner_id')
-      .eq('id', raw)
-      .maybeSingle();
-    if (error) throw error;
-    workspace = data;
+  const { data, error } = await supabase.rpc('join_workspace', { code });
+  if (error) {
+    if (error.message?.includes('Too many join attempts')) {
+      throw new Error('Too many join attempts. Please wait 10 minutes and try again.');
+    }
+    if (error.message?.includes('Invalid workspace code')) {
+      throw new Error('Invalid workspace code. Please verify the code and try again.');
+    }
+    if (error.message?.includes('already a member')) {
+      throw new Error('You are already a member of this workspace.');
+    }
+    if (error.message?.includes('owner of this workspace')) {
+      throw new Error('You are already the owner of this workspace.');
+    }
+    throw new Error(error.message || 'Failed to join workspace.');
   }
 
-  if (!workspace) {
-    throw new Error('No workspace found for that code.');
-  }
-
-  if (workspace.owner_id === userId) {
-    throw new Error('You are the owner of this workspace already.');
-  }
-
-  const { data: existing, error: memberError } = await supabase
-    .from('workspace_members')
-    .select('id, role, created_at')
-    .eq('workspace_id', workspace.id)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (memberError) throw memberError;
-  if (existing) {
-    throw new Error('You are already a member of this workspace.');
-  }
-
-  const { data: member, error: insertError } = await supabase
-    .from('workspace_members')
-    .insert({
-      workspace_id: workspace.id,
-      user_id: userId,
-      role: 'contributor',
-    })
-    .select('*')
-    .maybeSingle();
-
-  if (insertError) throw insertError;
-
-  await logActivity({
-    type: 'workspace_joined',
-    actorId: userId,
-    workspaceId: workspace.id,
-    message: `A member joined workspace "${workspace.name}".`,
-  });
-
-  return { workspace, member };
+  return {
+    workspace: {
+      id: data?.workspace_id,
+      name: data?.workspace_name,
+    },
+    member: {
+      role: data?.role || 'contributor',
+    },
+  };
 }
 
 export async function deleteWorkspace({ workspaceId, actorId }) {
