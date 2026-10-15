@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:server": "npm --prefix execution-server test"
+    "test:server": "npm --prefix execution-server test",
+    "test:integration": "npm --prefix execution-server run test:integration",
+    "test:rls": "node --test test/rls.test.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.1.3",
