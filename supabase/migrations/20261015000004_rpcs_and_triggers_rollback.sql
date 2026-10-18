@@ -20,8 +20,11 @@ DROP FUNCTION IF EXISTS public.notify_workspace_members(uuid, text, text, text);
 DROP FUNCTION IF EXISTS public.list_workspace_members(uuid);
 DROP FUNCTION IF EXISTS public.join_workspace(text);
 
+DROP FUNCTION IF EXISTS public.regenerate_join_code(uuid);
 DROP TABLE IF EXISTS public.join_attempts CASCADE;
 
+DROP TRIGGER IF EXISTS tr_enforce_workspace_join_code ON public.workspaces;
+DROP FUNCTION IF EXISTS public.enforce_workspace_join_code();
 ALTER TABLE public.workspaces ALTER COLUMN join_code DROP DEFAULT;
 DROP FUNCTION IF EXISTS public.generate_join_code();
 
