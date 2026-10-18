@@ -68,6 +68,7 @@ DROP POLICY IF EXISTS "Profiles: users can read own" ON public.profiles;
 DROP POLICY IF EXISTS "Profiles: users can update own" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_select" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
 
 -- pull_request_comments
@@ -122,10 +123,11 @@ DROP POLICY IF EXISTS "workspaces_update" ON public.workspaces;
 -- 3. RECREATE RESTRICTED POLICIES TARGETING `authenticated` ONLY
 -- ============================================================================
 
--- profiles: authenticated users can read profiles (needed for workspace member display), insert and update own
-CREATE POLICY "profiles_select" ON public.profiles
+-- profiles: own-row only. Other users' names come from list_workspace_members RPC.
+-- No policy allows reading other users' email.
+CREATE POLICY "profiles_select_own" ON public.profiles
   FOR SELECT TO authenticated
-  USING (true);
+  USING (id = (SELECT auth.uid()));
 
 CREATE POLICY "profiles_insert_own" ON public.profiles
   FOR INSERT TO authenticated
