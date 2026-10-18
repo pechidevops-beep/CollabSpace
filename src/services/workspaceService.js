@@ -2,16 +2,6 @@ import { supabase } from '../lib/supabaseClient';
 import { logActivity } from './activityService';
 import { createNotification } from './notificationService';
 
-export function generateJoinCode() {
-  const prefix = 'TEAM';
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let suffix = '';
-  for (let i = 0; i < 4; i += 1) {
-    const index = Math.floor(Math.random() * chars.length);
-    suffix += chars[index];
-  }
-  return `${prefix}-${suffix}`;
-}
 
 export async function getWorkspacesForUser(userId) {
   const { data, error } = await supabase
@@ -155,38 +145,20 @@ export async function deleteWorkspace({ workspaceId, actorId }) {
   });
 }
 
-export async function inviteWorkspaceMember({ workspaceId, email }) {
-  const { data: targetProfile, error: profileError } = await supabase
-    .from('profiles')
-    .select('id, full_name, email')
-    .eq('email', email)
-    .maybeSingle();
-
-  if (profileError) throw profileError;
-  if (!targetProfile) throw new Error('User not found with that email.');
-
-  const { data: existing, error: memberError } = await supabase
-    .from('workspace_members')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', targetProfile.id)
-    .maybeSingle();
-
-  if (memberError) throw memberError;
-  if (existing) throw new Error('User is already a member.');
-
-  const { data: newMember, error: insertError } = await supabase
-    .from('workspace_members')
-    .insert({
-      workspace_id: workspaceId,
-      user_id: targetProfile.id,
-      role: 'contributor',
-    })
-    .select('*, profiles:user_id ( id, full_name, email )')
-    .maybeSingle();
-
-  if (insertError) throw insertError;
-  return newMember;
+export async function regenerateJoinCode(workspaceId) {
+  const { data, error } = await supabase.rpc('regenerate_join_code', {
+    workspace_id: workspaceId,
+  });
+  if (error) {
+    if (error.message?.includes('Too many join code requests')) {
+      throw new Error('Too many join code requests. Please wait a few minutes and try again.');
+    }
+    if (error.message?.includes('Permission denied')) {
+      throw new Error('Permission denied. Only owners and admins can regenerate join codes.');
+    }
+    throw new Error(error.message || 'Failed to regenerate join code.');
+  }
+  return data;
 }
 
 export async function getDashboardStats(userId) {

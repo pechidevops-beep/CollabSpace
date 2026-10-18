@@ -12,14 +12,14 @@ import { createRepository, getRepositories } from '../../../services/repositoryS
 import {
     getWorkspaceById,
     getWorkspaceMembers,
-    inviteWorkspaceMember,
+    regenerateJoinCode,
     updateMemberRole,
     removeMember,
 } from '../../../services/workspaceService';
 import { AVAILABLE_ROLES } from '../../../hooks/usePermissions';
 import {
     Plus, Users, BookOpen, Copy, Check,
-    FolderGit2, X, UserPlus, Mail, Trash2,
+    FolderGit2, X, UserPlus, Trash2, Share2, RefreshCw,
 } from 'lucide-react';
 
 export default function WorkspacePage() {
@@ -42,10 +42,10 @@ export default function WorkspacePage() {
     const [repoLanguage, setRepoLanguage] = useState('');
     const [creatingRepo, setCreatingRepo] = useState(false);
 
-    // Invite member
-    const [inviteOpen, setInviteOpen] = useState(false);
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [inviting, setInviting] = useState(false);
+    // Share join code modal
+    const [shareModalOpen, setShareModalOpen] = useState(false);
+    const [regenerating, setRegenerating] = useState(false);
+    const [regenSuccess, setRegenSuccess] = useState('');
 
     // Join code copy
     const [copied, setCopied] = useState(false);
@@ -104,29 +104,28 @@ export default function WorkspacePage() {
         setCreatingRepo(false);
     };
 
-    const handleInvite = async (e) => {
-        e.preventDefault();
-        if (!inviteEmail.trim()) return;
-        setInviting(true);
-        try {
-            const newMember = await inviteWorkspaceMember({
-                workspaceId,
-                email: inviteEmail.trim(),
-            });
-            setMembers(prev => [...prev, newMember]);
-            setInviteEmail('');
-            setInviteOpen(false);
-        } catch (e) {
-            setError(e.message);
-        }
-        setInviting(false);
-    };
-
     const handleCopyCode = () => {
         if (!workspace?.join_code) return;
         navigator.clipboard.writeText(workspace.join_code);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleRegenerateCode = async () => {
+        if (!window.confirm('Are you sure you want to regenerate the join code? The previous code will stop working immediately.')) {
+            return;
+        }
+        setRegenerating(true);
+        setError('');
+        try {
+            const newCode = await regenerateJoinCode(workspaceId);
+            setWorkspace(prev => ({ ...prev, join_code: newCode }));
+            setRegenSuccess('Join code successfully regenerated!');
+            setTimeout(() => setRegenSuccess(''), 3000);
+        } catch (e) {
+            setError(e.message || 'Failed to regenerate join code');
+        }
+        setRegenerating(false);
     };
 
     const isOwner = workspace?.owner_id === user?.id;
@@ -188,7 +187,7 @@ export default function WorkspacePage() {
 
                 {/* Join Code */}
                 {workspace.join_code && (
-                    <Card className="p-5 flex items-center justify-between">
+                    <Card className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                             <p className="text-[11px] font-medium text-text-sub uppercase tracking-wider mb-1">
                                 Join Code
@@ -197,14 +196,27 @@ export default function WorkspacePage() {
                                 {workspace.join_code}
                             </p>
                         </div>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            icon={copied ? Check : Copy}
-                            onClick={handleCopyCode}
-                        >
-                            {copied ? 'Copied' : 'Copy'}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={copied ? Check : Copy}
+                                onClick={handleCopyCode}
+                            >
+                                {copied ? 'Copied' : 'Copy'}
+                            </Button>
+                            {canManage && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    icon={RefreshCw}
+                                    loading={regenerating}
+                                    onClick={handleRegenerateCode}
+                                >
+                                    Regenerate
+                                </Button>
+                            )}
+                        </div>
                     </Card>
                 )}
 
@@ -329,47 +341,81 @@ export default function WorkspacePage() {
                             <Users size={16} className="text-accent" />
                             Members ({members.length})
                         </h2>
-                        {canManage && (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                icon={UserPlus}
-                                onClick={() => setInviteOpen(p => !p)}
-                            >
-                                Invite
-                            </Button>
-                        )}
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={Share2}
+                            onClick={() => setShareModalOpen(true)}
+                        >
+                            Share Join Code
+                        </Button>
                     </div>
 
-                    {inviteOpen && (
-                        <Card className="p-4 mb-4 animate-fade-in">
-                            <form onSubmit={handleInvite} className="flex items-center gap-3">
-                                <Mail size={15} className="text-text-dim shrink-0" />
-                                <input
-                                    autoFocus
-                                    value={inviteEmail}
-                                    onChange={e => setInviteEmail(e.target.value)}
-                                    placeholder="Enter user email to invite"
-                                    className="flex-1 bg-subtle border border-border-subtle rounded-md px-3 py-2 text-xs text-text-main outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                                />
-                                <Button
-                                    type="submit"
-                                    variant="primary"
-                                    size="sm"
-                                    loading={inviting}
-                                    disabled={inviting || !inviteEmail.trim()}
-                                >
-                                    {inviting ? 'Inviting…' : 'Invite'}
-                                </Button>
-                                <button
-                                    type="button"
-                                    onClick={() => setInviteOpen(false)}
-                                    className="text-text-dim hover:text-text-main p-1 transition-colors"
-                                >
-                                    <X size={15} />
-                                </button>
-                            </form>
-                        </Card>
+                    {/* Share Join Code Modal */}
+                    {shareModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-surface border border-border-subtle rounded-xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-scale-up">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+                                            <Share2 size={16} />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-sm font-semibold text-text-main">Share Join Code</h2>
+                                            <p className="text-[11px] text-text-dim">Invite collaborators to this workspace</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShareModalOpen(false)}
+                                        className="text-text-dim hover:text-text-main p-1 transition-colors rounded-md"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+
+                                <p className="text-xs text-text-sub leading-relaxed">
+                                    Share this join code with your team or students. Anyone with this code can join this workspace directly without an email invitation.
+                                </p>
+
+                                <div className="p-4 rounded-lg bg-subtle border border-border-subtle text-center space-y-2">
+                                    <span className="text-[10px] uppercase font-semibold tracking-wider text-text-dim">Workspace Code</span>
+                                    <div className="text-2xl font-mono font-bold text-text-main tracking-widest select-all">
+                                        {workspace.join_code || '—'}
+                                    </div>
+                                </div>
+
+                                {regenSuccess && (
+                                    <div className="p-2.5 rounded-lg bg-semantic-success/10 border border-semantic-success/20 text-semantic-success text-xs text-center">
+                                        {regenSuccess}
+                                    </div>
+                                )}
+
+                                <div className="flex flex-col sm:flex-row items-center gap-2 pt-2">
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        className="w-full"
+                                        icon={copied ? Check : Copy}
+                                        onClick={handleCopyCode}
+                                    >
+                                        {copied ? 'Copied to Clipboard!' : 'Copy Join Code'}
+                                    </Button>
+                                    {canManage && (
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            className="w-full sm:w-auto"
+                                            icon={RefreshCw}
+                                            loading={regenerating}
+                                            onClick={handleRegenerateCode}
+                                        >
+                                            Regenerate
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                     <div className="space-y-2">
