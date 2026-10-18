@@ -208,11 +208,21 @@ end;
 $$;
 
 -- Revoke execution from public & anon
-REVOKE ALL ON FUNCTION public.handle_new_user() FROM public, anon;
-REVOKE ALL ON FUNCTION public.set_repo_files_updated_at() FROM public, anon;
-REVOKE ALL ON FUNCTION public.is_workspace_member(uuid, uuid) FROM public, anon;
-REVOKE ALL ON FUNCTION public.is_workspace_role(uuid, text[], uuid) FROM public, anon;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM anon;
+REVOKE ALL ON FUNCTION public.set_repo_files_updated_at() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.set_repo_files_updated_at() FROM anon;
+REVOKE ALL ON FUNCTION public.is_workspace_member(uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_workspace_member(uuid, uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.is_workspace_role(uuid, text[], uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_workspace_role(uuid, text[], uuid) FROM anon;
 
--- Grant execution on app_private helpers to authenticated
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA app_private FROM public, anon;
+-- Grant execution on app_private helpers to authenticated only
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA app_private FROM PUBLIC;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA app_private FROM anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app_private TO authenticated;
+
+-- Ensure future functions in app_private do not inherit execute for PUBLIC or anon
+ALTER DEFAULT PRIVILEGES IN SCHEMA app_private REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app_private REVOKE ALL ON FUNCTIONS FROM anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app_private GRANT EXECUTE ON FUNCTIONS TO authenticated;
