@@ -53,6 +53,7 @@ const allReviewFiles = [
   { label: 'PRE-FLIGHT LIVE AUDIT SCRIPT', path: 'supabase/preflight_live.sql' },
   { label: 'VALIDATE CONSTRAINTS SCRIPT', path: 'supabase/validate_constraints.sql' },
   { label: 'SECURITY ADVISOR EQUIVALENT AUDIT QUERIES', path: 'supabase/security_advisor.sql' },
+  { label: 'PRE-MIGRATION REHEARSAL SEED SCRIPT', path: 'supabase/rehearsal_seed.js' },
   { label: 'AUTOMATED SECURITY & RLS TEST SUITE', path: 'test/rls.test.js' }
 ];
 

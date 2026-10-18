@@ -1885,6 +1885,25 @@ $$;
 
 ALTER TABLE public.workspaces ALTER COLUMN join_code SET DEFAULT public.generate_join_code();
 
+-- BEFORE INSERT trigger that overrides any client-supplied join_code (Item 3)
+CREATE OR REPLACE FUNCTION public.enforce_workspace_join_code()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.join_code := public.generate_join_code();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_enforce_workspace_join_code ON public.workspaces;
+CREATE TRIGGER tr_enforce_workspace_join_code
+  BEFORE INSERT ON public.workspaces
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_workspace_join_code();
+
 -- Regenerate ALL existing join codes with high-entropy SQL generator
 DO $$
 DECLARE
@@ -1897,6 +1916,68 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- Rate-limited join_code regeneration RPC (owner/admin only)
+CREATE OR REPLACE FUNCTION public.regenerate_join_code(workspace_id UUID)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_id UUID;
+  v_caller_role TEXT;
+  v_recent_attempts INT;
+  v_new_code TEXT;
+BEGIN
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  -- 1. Check permissions (owner or admin only)
+  SELECT wm.role INTO v_caller_role
+  FROM public.workspace_members wm
+  WHERE wm.workspace_id = regenerate_join_code.workspace_id
+    AND wm.user_id = v_caller_id;
+
+  IF v_caller_role IS NULL OR v_caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'Permission denied. Only owners and admins can regenerate join codes.';
+  END IF;
+
+  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user
+  SELECT count(*)
+  INTO v_recent_attempts
+  FROM public.join_attempts
+  WHERE user_id = v_caller_id
+    AND attempted_at > (now() - interval '10 minutes');
+
+  IF v_recent_attempts >= 10 THEN
+    RAISE EXCEPTION 'Too many join code requests. Please try again later.';
+  END IF;
+
+  INSERT INTO public.join_attempts (user_id, attempted_at)
+  VALUES (v_caller_id, now());
+
+  -- 3. Generate new code and update workspace with authorization flag
+  v_new_code := public.generate_join_code();
+  PERFORM set_config('app.allow_join_code_regen', 'true', true);
+
+  UPDATE public.workspaces
+  SET join_code = v_new_code
+  WHERE id = regenerate_join_code.workspace_id;
+
+  -- 4. Log activity
+  INSERT INTO public.activities (type, actor_id, workspace_id, message)
+  VALUES ('join_code_regenerated', v_caller_id, regenerate_join_code.workspace_id, 'Workspace join code was regenerated.');
+
+  RETURN v_new_code;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.regenerate_join_code(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.regenerate_join_code(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.regenerate_join_code(UUID) TO authenticated;
 
 -- ============================================================================
 -- 3. RATE-LIMITED JOIN WORKSPACE RPC
@@ -2128,8 +2209,9 @@ DECLARE
   v_is_staff BOOLEAN;
 BEGIN
   v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
   IF v_caller_id IS NULL THEN
-    RAISE EXCEPTION 'Not authenticated';
+    RETURN new;
   END IF;
 
   -- Assignment's workspace
@@ -2202,11 +2284,20 @@ DECLARE
   v_caller_role TEXT;
 BEGIN
   v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
   IF v_caller_id IS NULL THEN
-    RAISE EXCEPTION 'Not authenticated';
+    RETURN NEW;
   END IF;
 
-  -- 1. Never permit changing owner_id or workspace type
+  -- 1. Keep id, created_at, owner_id, and type immutable for every caller (Items 2 & 4)
+  IF NEW.id <> OLD.id THEN
+    RAISE EXCEPTION 'Changing workspace id is not permitted.';
+  END IF;
+
+  IF NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'Changing workspace created_at is not permitted.';
+  END IF;
+
   IF NEW.owner_id <> OLD.owner_id THEN
     RAISE EXCEPTION 'Changing workspace owner_id is not permitted.';
   END IF;
@@ -2215,7 +2306,14 @@ BEGIN
     RAISE EXCEPTION 'Changing workspace type is not permitted.';
   END IF;
 
-  -- 2. Lookup caller role in this workspace
+  -- 2. Direct updates to join_code are blocked from client callers (Item 3)
+  IF NEW.join_code <> OLD.join_code THEN
+    IF current_setting('app.allow_join_code_regen', true) IS DISTINCT FROM 'true' THEN
+      RAISE EXCEPTION 'Direct updates to join_code are not permitted. Use regenerate_join_code RPC.';
+    END IF;
+  END IF;
+
+  -- 3. Lookup caller role in this workspace
   SELECT wm.role INTO v_caller_role
   FROM public.workspace_members wm
   WHERE wm.workspace_id = OLD.id
@@ -2225,13 +2323,8 @@ BEGIN
     RAISE EXCEPTION 'Access denied. You are not a member of this workspace.';
   END IF;
 
-  -- 3. Admins may ONLY change name and join_code
-  IF v_caller_role = 'admin' THEN
-    IF NEW.created_at <> OLD.created_at THEN
-      RAISE EXCEPTION 'Admins cannot change created_at.';
-    END IF;
-  ELSIF v_caller_role = 'owner' THEN
-    -- Owner can update name and join_code (owner_id and type already protected above)
+  -- 4. Only owners and admins can update workspaces
+  IF v_caller_role = ANY (ARRAY['owner'::text, 'admin'::text]) THEN
     NULL;
   ELSE
     RAISE EXCEPTION 'Permission denied. Only owners and admins can update workspaces.';
@@ -2311,7 +2404,9 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  IF OLD.role = 'owner' THEN
+  -- Block only direct deletes of an owner row (pg_trigger_depth() = 1).
+  -- Allow cascades from workspace or user deletion (pg_trigger_depth() > 1).
+  IF pg_trigger_depth() = 1 AND OLD.role = 'owner' THEN
     RAISE EXCEPTION 'Cannot delete workspace owner membership row.';
   END IF;
   RETURN OLD;
@@ -2341,8 +2436,9 @@ DECLARE
   v_is_author BOOLEAN;
 BEGIN
   v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
   IF v_caller_id IS NULL THEN
-    RAISE EXCEPTION 'Not authenticated';
+    RETURN NEW;
   END IF;
 
   SELECT r.workspace_id INTO v_workspace_id
@@ -2358,14 +2454,19 @@ BEGIN
 
   v_is_author := (OLD.author_id = v_caller_id);
 
-  -- Only PR author or owner/admin can change status
-  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
-    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
+  -- Only owner/admin may set status = 'merged' and merged_by (must equal the caller) (Item 6)
+  IF (NEW.status = 'merged' OR NEW.merged_by IS NOT NULL) THEN
+    IF NOT v_is_staff THEN
+      RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
+    END IF;
+    IF NEW.merged_by IS DISTINCT FROM v_caller_id THEN
+      RAISE EXCEPTION 'merged_by must equal the authenticated caller.';
+    END IF;
   END IF;
 
-  -- Only staff (owner/admin) or author can set merged_by
-  IF (NEW.merged_by IS DISTINCT FROM OLD.merged_by) AND NOT (v_is_staff OR v_is_author) THEN
-    RAISE EXCEPTION 'Only the pull request author or workspace staff can set merged_by.';
+  -- The author may open/close. Non-author non-staff cannot change status at all.
+  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
+    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
   END IF;
 
   RETURN NEW;
@@ -2424,8 +2525,11 @@ DROP FUNCTION IF EXISTS public.notify_workspace_members(uuid, text, text, text);
 DROP FUNCTION IF EXISTS public.list_workspace_members(uuid);
 DROP FUNCTION IF EXISTS public.join_workspace(text);
 
+DROP FUNCTION IF EXISTS public.regenerate_join_code(uuid);
 DROP TABLE IF EXISTS public.join_attempts CASCADE;
 
+DROP TRIGGER IF EXISTS tr_enforce_workspace_join_code ON public.workspaces;
+DROP FUNCTION IF EXISTS public.enforce_workspace_join_code();
 ALTER TABLE public.workspaces ALTER COLUMN join_code DROP DEFAULT;
 DROP FUNCTION IF EXISTS public.generate_join_code();
 
@@ -2460,6 +2564,24 @@ CREATE INDEX IF NOT EXISTS idx_commits_branch ON public.commits USING btree (bra
 CREATE INDEX IF NOT EXISTS idx_submissions_repository ON public.submissions USING btree (repository_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace_created ON public.activities USING btree (workspace_id, created_at DESC);
 
+-- Clean up any legacy duplicate sibling files (keeping the most recently updated row)
+DELETE FROM public.repository_files
+WHERE id IN (
+  SELECT id
+  FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (
+             PARTITION BY repository_id,
+                          COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                          COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                          name
+             ORDER BY updated_at DESC NULLS LAST, id DESC
+           ) AS rnum
+    FROM public.repository_files
+  ) t
+  WHERE t.rnum > 1
+);
+
 -- Unique index on repository files to prevent sibling collisions within the same directory / branch
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.repository_files (
   repository_id,
@@ -2472,17 +2594,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.re
 -- 2. CHECK CONSTRAINTS (ADDED AS NOT VALID FOR SAFE ROLLOUT)
 -- ============================================================================
 
--- Workspace name length & charset (alphanumeric, spaces, hyphens, underscores, dots; 1-100 chars)
+-- Workspace names: allow Unicode letters/digits/spaces/common punctuation
+-- (length 1-100, trimmed, no control characters or angle brackets) (Item 5)
 ALTER TABLE public.workspaces
   DROP CONSTRAINT IF EXISTS workspaces_name_format_check,
   ADD CONSTRAINT workspaces_name_format_check
   CHECK (
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
-    name ~ '^[a-zA-Z0-9_\-\. ]+$'
+    trim(name) = name AND
+    name NOT LIKE '%<%' AND
+    name NOT LIKE '%>%' AND
+    name !~ '[\x00-\x1f\x7f]'
   ) NOT VALID;
 
--- Repository name length & charset (no spaces, standard slug-compatible repo names; 1-100 chars)
+-- Workspace join codes: uppercase alphanumeric TEAM-XXXXXXXX (Item 3)
+ALTER TABLE public.workspaces
+  DROP CONSTRAINT IF EXISTS workspaces_join_code_format_check,
+  ADD CONSTRAINT workspaces_join_code_format_check
+  CHECK (join_code ~ '^TEAM-[A-Z0-9]{8}$') NOT VALID;
+
+-- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars)
 ALTER TABLE public.repositories
   DROP CONSTRAINT IF EXISTS repositories_name_format_check,
   ADD CONSTRAINT repositories_name_format_check
@@ -2492,8 +2624,7 @@ ALTER TABLE public.repositories
     name ~ '^[a-zA-Z0-9_\-\.]+$'
   ) NOT VALID;
 
--- Repository file names: consistent with execution-server safePath
--- (no '/', '\', '.', '..', no control characters, max 100 chars)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -2504,7 +2635,7 @@ ALTER TABLE public.repository_files
     name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
-    name !~ '[\x00-\x1f\x7f]'
+    name ~ '^[a-zA-Z0-9_\-\.]+$'
   ) NOT VALID;
 
 -- File content size limit (512 KB = 524,288 bytes)
@@ -2586,6 +2717,7 @@ ALTER TABLE public.assignments DROP CONSTRAINT IF EXISTS assignments_max_points_
 ALTER TABLE public.repository_files DROP CONSTRAINT IF EXISTS repository_files_content_limit_check;
 ALTER TABLE public.repository_files DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check;
 ALTER TABLE public.repositories DROP CONSTRAINT IF EXISTS repositories_name_format_check;
+ALTER TABLE public.workspaces DROP CONSTRAINT IF EXISTS workspaces_join_code_format_check;
 ALTER TABLE public.workspaces DROP CONSTRAINT IF EXISTS workspaces_name_format_check;
 
 -- Drop unique index and new indexes
@@ -2617,8 +2749,8 @@ CREATE INDEX IF NOT EXISTS idx_grades_submission ON public.grades USING btree (s
 -- ============================================================================
 
 -- 1. Check workspace names
--- Criteria: 1-100 characters, alphanumeric, spaces, hyphens, underscores, dots
--- Note: "My Workspace" is completely valid.
+-- Criteria: 1-100 characters, trimmed, no control characters or angle brackets (<>)
+-- (Allows Unicode letters, digits, spaces, common punctuation. "My Workspace" is valid)
 SELECT
   'INVALID WORKSPACE NAME' AS check_name,
   id,
@@ -2629,7 +2761,10 @@ FROM public.workspaces
 WHERE name IS NULL
    OR char_length(name) < 1
    OR char_length(name) > 100
-   OR name !~ '^[a-zA-Z0-9_\-\. ]+$';
+   OR trim(name) <> name
+   OR name LIKE '%<%'
+   OR name LIKE '%>%'
+   OR name ~ '[\x00-\x1f\x7f]';
 
 -- 2. Check repository names
 -- Criteria: 1-100 characters, alphanumeric, hyphens, underscores, dots (no spaces)
@@ -2757,6 +2892,7 @@ WHERE max_points <= 0;
 -- ============================================================================
 
 ALTER TABLE public.workspaces VALIDATE CONSTRAINT workspaces_name_format_check;
+ALTER TABLE public.workspaces VALIDATE CONSTRAINT workspaces_join_code_format_check;
 ALTER TABLE public.repositories VALIDATE CONSTRAINT repositories_name_format_check;
 ALTER TABLE public.repository_files VALIDATE CONSTRAINT repository_files_filename_safe_check;
 ALTER TABLE public.repository_files VALIDATE CONSTRAINT repository_files_content_limit_check;
@@ -2826,6 +2962,342 @@ SELECT
 FROM information_schema.table_privileges
 WHERE grantee = 'anon'
   AND table_schema = 'public';
+
+
+/******************************************************************************
+ * [FILE]: supabase/rehearsal_seed.js
+ * [DESCRIPTION]: PRE-MIGRATION REHEARSAL SEED SCRIPT
+ ******************************************************************************/
+
+// supabase/rehearsal_seed.js
+// Seeds realistic test/rehearsal data against the TEST Supabase project
+// Run AFTER the live schema baseline and BEFORE migrations 1-5.
+//
+// Usage:
+//   node supabase/rehearsal_seed.js
+
+import fs from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
+
+// 1. Load .env.test if present
+const testEnvPath = path.resolve(process.cwd(), '.env.test');
+if (fs.existsSync(testEnvPath)) {
+  dotenv.config({ path: testEnvPath, override: true });
+}
+
+// 2. Load .env to prevent accidental execution against live/production
+const prodEnvPath = path.resolve(process.cwd(), '.env');
+let prodUrl = null;
+if (fs.existsSync(prodEnvPath)) {
+  const prodEnvContent = fs.readFileSync(prodEnvPath, 'utf8');
+  const match = prodEnvContent.match(/VITE_SUPABASE_URL\s*=\s*([^\r\n#]+)/);
+  if (match) {
+    prodUrl = match[1].trim().replace(/^["']|["']$/g, '');
+  }
+}
+
+const SUPABASE_URL = process.env.SUPABASE_TEST_URL || process.env.VITE_SUPABASE_URL || 'http://127.0.0.1:54321';
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SERVICE_ROLE_KEY) {
+  console.error('\x1b[31m[ERROR]\x1b[0m SUPABASE_SERVICE_ROLE_KEY is required to run the rehearsal seed.');
+  console.error('Please set SUPABASE_SERVICE_ROLE_KEY in .env.test or your environment.');
+  process.exit(1);
+}
+
+// Safety check: refuse if test URL matches production
+if (prodUrl && SUPABASE_URL) {
+  const normTest = SUPABASE_URL.trim().toLowerCase().replace(/\/$/, '');
+  const normProd = prodUrl.trim().toLowerCase().replace(/\/$/, '');
+  if (normTest === normProd) {
+    console.error(`\x1b[31m[SAFETY ABORT]\x1b[0m SUPABASE_TEST_URL (${SUPABASE_URL}) matches production URL in .env (${prodUrl}).`);
+    console.error('The rehearsal seed must NEVER be executed against production.');
+    process.exit(1);
+  }
+}
+
+const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+async function main() {
+  console.log(`\x1b[34m[INFO]\x1b[0m Connecting to Supabase at: ${SUPABASE_URL}`);
+  console.log('\x1b[34m[INFO]\x1b[0m Seeding pre-migration rehearsal data using service role...\n');
+
+  const timestamp = Date.now();
+  const users = {};
+  const userRoles = ['owner', 'admin', 'studentA', 'studentB', 'viewer', 'outsider'];
+
+  // 1. Create auth users & profiles
+  console.log('1. Creating rehearsal users...');
+  for (const role of userRoles) {
+    const email = `rehearsal_${role}_${timestamp}@testcollabspace.internal`;
+    const password = 'RehearsalPassword2026!';
+    const fullName = `Rehearsal ${role.toUpperCase()}`;
+
+    const { data, error } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (error) {
+      throw new Error(`Failed to create user ${email}: ${error.message}`);
+    }
+
+    users[role] = data.user;
+    console.log(`   - Created ${role}: ${data.user.id} (${email})`);
+  }
+
+  // 2. Create workspaces (one named "My Workspace", one classroom)
+  console.log('\n2. Creating workspaces...');
+  const { data: teamWs, error: teamErr } = await adminClient
+    .from('workspaces')
+    .insert({
+      name: 'My Workspace',
+      type: 'team',
+      owner_id: users.owner.id,
+      join_code: 'TEAM-LEGACY1', // Pre-migration format
+    })
+    .select('*')
+    .single();
+
+  if (teamErr) throw new Error(`Failed to create "My Workspace": ${teamErr.message}`);
+  console.log(`   - Created team workspace "My Workspace": ${teamWs.id}`);
+
+  const { data: classroomWs, error: classErr } = await adminClient
+    .from('workspaces')
+    .insert({
+      name: 'CS101 Algorithms & Systems',
+      type: 'classroom',
+      owner_id: users.owner.id,
+      join_code: 'TEAM-LEGACY2', // Pre-migration format
+    })
+    .select('*')
+    .single();
+
+  if (classErr) throw new Error(`Failed to create classroom workspace: ${classErr.message}`);
+  console.log(`   - Created classroom workspace: ${classroomWs.id}`);
+
+  // 3. Create workspace memberships
+  console.log('\n3. Creating workspace memberships...');
+  const members = [
+    // Team workspace members
+    { workspace_id: teamWs.id, user_id: users.owner.id, role: 'owner' },
+    { workspace_id: teamWs.id, user_id: users.admin.id, role: 'admin' },
+    { workspace_id: teamWs.id, user_id: users.studentA.id, role: 'contributor' },
+    { workspace_id: teamWs.id, user_id: users.viewer.id, role: 'viewer' },
+    // Classroom members
+    { workspace_id: classroomWs.id, user_id: users.owner.id, role: 'owner' },
+    { workspace_id: classroomWs.id, user_id: users.admin.id, role: 'admin' },
+    { workspace_id: classroomWs.id, user_id: users.studentA.id, role: 'contributor' },
+    { workspace_id: classroomWs.id, user_id: users.studentB.id, role: 'contributor' },
+    { workspace_id: classroomWs.id, user_id: users.viewer.id, role: 'viewer' },
+  ];
+
+  const { error: memErr } = await adminClient.from('workspace_members').insert(members);
+  if (memErr) throw new Error(`Failed to create workspace members: ${memErr.message}`);
+  console.log(`   - Inserted ${members.length} membership records.`);
+
+  // 4. Create repositories (including one with created_by NULL)
+  console.log('\n4. Creating repositories...');
+  const repos = [
+    {
+      workspace_id: teamWs.id,
+      name: 'core-platform',
+      description: 'Main platform repository',
+      created_by: users.owner.id,
+      visibility: 'public',
+    },
+    {
+      workspace_id: teamWs.id,
+      name: 'legacy-orphaned-repo',
+      description: 'Repository with NULL created_by to test migration handling',
+      created_by: null, // Per item 8 requirement: one repo with created_by NULL
+      visibility: 'private',
+    },
+    {
+      workspace_id: classroomWs.id,
+      name: 'student-a-assignment',
+      description: 'Student A assignment repository',
+      created_by: users.studentA.id,
+      visibility: 'private',
+    },
+  ];
+
+  const { data: createdRepos, error: repoErr } = await adminClient
+    .from('repositories')
+    .insert(repos)
+    .select('*');
+
+  if (repoErr) throw new Error(`Failed to create repositories: ${repoErr.message}`);
+  console.log(`   - Created ${createdRepos.length} repositories (including 1 with created_by NULL).`);
+
+  const studentRepo = createdRepos.find((r) => r.name === 'student-a-assignment');
+  const teamRepo = createdRepos.find((r) => r.name === 'core-platform');
+
+  // 5. Create default branches
+  console.log('\n5. Creating repository branches...');
+  const branches = createdRepos.map((r) => ({
+    repository_id: r.id,
+    name: 'main',
+    is_default: true,
+  }));
+
+  const { data: createdBranches, error: branchErr } = await adminClient
+    .from('branches')
+    .insert(branches)
+    .select('*');
+
+  if (branchErr) throw new Error(`Failed to create branches: ${branchErr.message}`);
+  console.log(`   - Created ${createdBranches.length} default branches.`);
+
+  const studentBranch = createdBranches.find((b) => b.repository_id === studentRepo.id);
+  const teamBranch = createdBranches.find((b) => b.repository_id === teamRepo.id);
+
+  // 6. Create repository files including DUPLICATE SIBLING NAME
+  console.log('\n6. Creating repository files (including duplicate sibling)...');
+  const files = [
+    {
+      repository_id: teamRepo.id,
+      branch_id: teamBranch.id,
+      name: 'README.md',
+      content: '# Core Platform\nWelcome to CollabSpace rehearsal test.',
+      is_folder: false,
+    },
+    {
+      repository_id: teamRepo.id,
+      branch_id: teamBranch.id,
+      name: 'index.js',
+      content: 'console.log("CollabSpace initialized");',
+      is_folder: false,
+    },
+    // Duplicate sibling file 1
+    {
+      repository_id: studentRepo.id,
+      branch_id: studentBranch.id,
+      parent_id: null,
+      name: 'duplicate.py',
+      content: '# Duplicate file version 1 (older)',
+      is_folder: false,
+      updated_at: new Date(Date.now() - 3600000).toISOString(),
+    },
+    // Duplicate sibling file 2 (same repository_id, branch_id, parent_id, name)
+    {
+      repository_id: studentRepo.id,
+      branch_id: studentBranch.id,
+      parent_id: null,
+      name: 'duplicate.py',
+      content: '# Duplicate file version 2 (newer)',
+      is_folder: false,
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const { error: fileErr } = await adminClient.from('repository_files').insert(files);
+  if (fileErr) throw new Error(`Failed to insert repository files: ${fileErr.message}`);
+  console.log('   - Inserted repository files, including duplicate sibling file "duplicate.py".');
+
+  // 7. Create assignment in classroom
+  console.log('\n7. Creating classroom assignment...');
+  const { data: assignment, error: asgnErr } = await adminClient
+    .from('assignments')
+    .insert({
+      workspace_id: classroomWs.id,
+      title: 'Lab 1: Graph Algorithms',
+      description: 'Implement BFS and DFS in Python.',
+      created_by: users.owner.id,
+      max_points: 100,
+      due_date: new Date(Date.now() + 86400000 * 7).toISOString(),
+    })
+    .select('*')
+    .single();
+
+  if (asgnErr) throw new Error(`Failed to create assignment: ${asgnErr.message}`);
+  console.log(`   - Created assignment: ${assignment.id} ("${assignment.title}")`);
+
+  // 8. Create submissions
+  console.log('\n8. Creating student submission...');
+  const { data: submission, error: subErr } = await adminClient
+    .from('submissions')
+    .insert({
+      assignment_id: assignment.id,
+      student_id: users.studentA.id,
+      repository_id: studentRepo.id,
+      status: 'submitted',
+    })
+    .select('*')
+    .single();
+
+  if (subErr) throw new Error(`Failed to create submission: ${subErr.message}`);
+  console.log(`   - Created submission: ${submission.id}`);
+
+  // 9. Create notifications
+  console.log('\n9. Creating notifications...');
+  const notifications = [
+    {
+      user_id: users.owner.id,
+      workspace_id: teamWs.id,
+      type: 'announcement',
+      title: 'Welcome to Rehearsal',
+      message: 'Initial rehearsal setup completed.',
+    },
+    {
+      user_id: users.studentA.id,
+      workspace_id: classroomWs.id,
+      type: 'announcement',
+      title: 'Lab 1 Assigned',
+      message: 'Please complete Lab 1 before the deadline.',
+    },
+  ];
+
+  const { error: notifErr } = await adminClient.from('notifications').insert(notifications);
+  if (notifErr) throw new Error(`Failed to create notifications: ${notifErr.message}`);
+  console.log(`   - Created ${notifications.length} notification records.`);
+
+  // 10. Create activities
+  console.log('\n10. Creating activities...');
+  const activities = [
+    {
+      workspace_id: teamWs.id,
+      actor_id: users.owner.id,
+      type: 'workspace_created',
+      message: 'Workspace "My Workspace" created.',
+    },
+    {
+      workspace_id: classroomWs.id,
+      actor_id: users.owner.id,
+      type: 'assignment_created',
+      message: 'Assignment "Lab 1: Graph Algorithms" created.',
+    },
+    {
+      workspace_id: classroomWs.id,
+      actor_id: users.studentA.id,
+      type: 'submission_created',
+      message: 'Student A submitted Lab 1.',
+    },
+  ];
+
+  const { error: actErr } = await adminClient.from('activities').insert(activities);
+  if (actErr) throw new Error(`Failed to create activities: ${actErr.message}`);
+  console.log(`   - Created ${activities.length} activity records.`);
+
+  console.log('\n\x1b[32m[SUCCESS]\x1b[0m Rehearsal seed data successfully created on TEST project!');
+  console.log('You can now:');
+  console.log('  1. Run supabase/preflight_live.sql in the SQL Editor to inspect legacy states.');
+  console.log('  2. Apply migrations 1-5 (or supabase/apply_live.sql).');
+  console.log('  3. Run supabase/validate_constraints.sql.');
+  console.log('  4. Run supabase/security_advisor.sql.');
+  console.log('  5. Run npm run test:rls.\n');
+}
+
+main().catch((err) => {
+  console.error('\n\x1b[31m[FAILED]\x1b[0m Rehearsal seed error:', err.message);
+  process.exit(1);
+});
 
 
 /******************************************************************************
@@ -3278,6 +3750,169 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
         type: 'spoof',
       });
     assert.ok(spoofErr !== null, 'Spoofed activity actor_id must fail');
+  });
+
+  test('16. Prove: owner can delete workspace and owner membership cascades cleanly (Item 1)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // Create a temporary workspace for this cascade test
+    const { data: tempWs, error: createErr } = await clients.owner
+      .from('workspaces')
+      .insert({ name: 'Temp Cascade Workspace', type: 'team', owner_id: users.owner.id })
+      .select('*')
+      .single();
+    assert.equal(createErr, null, 'Owner must be able to create workspace');
+
+    // Confirm owner membership exists
+    const { data: memsBefore } = await adminClient
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', tempWs.id)
+      .eq('user_id', users.owner.id);
+    assert.equal(memsBefore?.length, 1, 'Owner member row must exist');
+
+    // Directly deleting owner membership row must FAIL (prevent_owner_member_delete at trigger depth 1)
+    const { error: directDelErr } = await adminClient
+      .from('workspace_members')
+      .delete()
+      .eq('workspace_id', tempWs.id)
+      .eq('user_id', users.owner.id);
+    assert.ok(directDelErr !== null, 'Direct deletion of owner membership must be blocked');
+
+    // Deleting the workspace itself must CASCADE and succeed
+    const { error: wsDelErr } = await clients.owner
+      .from('workspaces')
+      .delete()
+      .eq('id', tempWs.id);
+    assert.equal(wsDelErr, null, 'Owner must be able to delete their workspace');
+
+    // Verify member row is gone
+    const { data: memsAfter } = await adminClient
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', tempWs.id);
+    assert.equal(memsAfter?.length, 0, 'Workspace members must be cleanly cascaded');
+  });
+
+  test('17. Prove: deleting a user via service role cascades cleanly (Item 1)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // Create a temporary user
+    const tempEmail = `cascade_user_${Date.now()}@testcollabspace.internal`;
+    const { data: tempUser, error: userCreateErr } = await adminClient.auth.admin.createUser({
+      email: tempEmail,
+      password: 'CascadePassword123!',
+      email_confirm: true,
+      user_metadata: { full_name: 'Cascade User' },
+    });
+    assert.equal(userCreateErr, null);
+
+    // Create a workspace owned by this temporary user
+    const { data: tempUserWs } = await adminClient
+      .from('workspaces')
+      .insert({ name: 'User Cascade WS', type: 'team', owner_id: tempUser.user.id })
+      .select('*')
+      .single();
+
+    // Deleting the user via adminClient must cleanly cascade without trigger blocking
+    const { error: deleteUserErr } = await adminClient.auth.admin.deleteUser(tempUser.user.id);
+    assert.equal(deleteUserErr, null, 'Service role user deletion must cascade cleanly');
+  });
+
+  test('18. Prove: join codes - client override ignored, direct update blocked, RPC restricted (Item 3)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // 1. Weak client-supplied code is overridden by trigger to TEAM-[A-Z0-9]{8}
+    const { data: wsWithWeakCode, error: insertErr } = await clients.owner
+      .from('workspaces')
+      .insert({
+        name: 'Auto Join Code WS',
+        type: 'team',
+        owner_id: users.owner.id,
+        join_code: 'WEAK-12', // Attempt to supply weak code
+      })
+      .select('*')
+      .single();
+    assert.equal(insertErr, null);
+    assert.notEqual(wsWithWeakCode.join_code, 'WEAK-12', 'Trigger must override client-supplied join code');
+    assert.match(wsWithWeakCode.join_code, /^TEAM-[A-Z0-9]{8}$/, 'Generated join code must match format');
+
+    // 2. Admin direct update of join_code fails
+    const { error: directUpdateErr } = await clients.admin
+      .from('workspaces')
+      .update({ join_code: 'TEAM-HACKED99' })
+      .eq('id', wsWithWeakCode.id);
+    assert.ok(directUpdateErr !== null, 'Direct update to join_code must be rejected by trigger');
+
+    // 3. Contributor/outsider calling regenerate_join_code fails
+    const { error: contributorRegenErr } = await clients.studentA.rpc('regenerate_join_code', {
+      workspace_id: wsWithWeakCode.id,
+    });
+    assert.ok(contributorRegenErr !== null, 'Contributor cannot regenerate join code');
+
+    // 4. Owner calling regenerate_join_code succeeds
+    const { data: newCode, error: ownerRegenErr } = await clients.owner.rpc('regenerate_join_code', {
+      workspace_id: wsWithWeakCode.id,
+    });
+    assert.equal(ownerRegenErr, null);
+    assert.match(newCode, /^TEAM-[A-Z0-9]{8}$/);
+    assert.notEqual(newCode, wsWithWeakCode.join_code, 'Regenerated code must be different');
+
+    // Cleanup
+    await adminClient.from('workspaces').delete().eq('id', wsWithWeakCode.id);
+  });
+
+  test('19. Prove: pull request merge permissions and merged_by enforcement (Item 6)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // Student A creates a PR on their repo
+    const { data: pr, error: prErr } = await clients.studentA
+      .from('pull_requests')
+      .insert({
+        repository_id: studentARepo.id,
+        title: 'Feature implementation PR',
+        author_id: users.studentA.id,
+        source_branch: 'feature',
+        target_branch: 'main',
+        status: 'open',
+      })
+      .select('*')
+      .single();
+    assert.equal(prErr, null, 'Author should create pull request');
+
+    // Author can close and reopen their own PR
+    const { error: closeErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'closed' })
+      .eq('id', pr.id);
+    assert.equal(closeErr, null, 'Author can close their PR');
+
+    const { error: reopenErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'open' })
+      .eq('id', pr.id);
+    assert.equal(reopenErr, null, 'Author can reopen their PR');
+
+    // Student A (contributor/author) CANNOT set status = 'merged'
+    const { error: nonStaffMergeErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'merged', merged_by: users.studentA.id })
+      .eq('id', pr.id);
+    assert.ok(nonStaffMergeErr !== null, 'Non-staff author cannot merge PR');
+
+    // Owner CAN set status = 'merged' with merged_by = owner.id
+    const { error: staffMergeErr } = await clients.owner
+      .from('pull_requests')
+      .update({ status: 'merged', merged_by: users.owner.id })
+      .eq('id', pr.id);
+    assert.equal(staffMergeErr, null, 'Owner must be able to merge PR');
+
+    // Staff cannot set merged_by to someone else
+    const { error: spoofMergeErr } = await clients.owner
+      .from('pull_requests')
+      .update({ merged_by: users.studentA.id })
+      .eq('id', pr.id);
+    assert.ok(spoofMergeErr !== null, 'merged_by must equal authenticated caller');
   });
 });
 

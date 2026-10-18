@@ -1179,6 +1179,25 @@ $$;
 
 ALTER TABLE public.workspaces ALTER COLUMN join_code SET DEFAULT public.generate_join_code();
 
+-- BEFORE INSERT trigger that overrides any client-supplied join_code (Item 3)
+CREATE OR REPLACE FUNCTION public.enforce_workspace_join_code()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.join_code := public.generate_join_code();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_enforce_workspace_join_code ON public.workspaces;
+CREATE TRIGGER tr_enforce_workspace_join_code
+  BEFORE INSERT ON public.workspaces
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_workspace_join_code();
+
 -- Regenerate ALL existing join codes with high-entropy SQL generator
 DO $$
 DECLARE
@@ -1191,6 +1210,68 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- Rate-limited join_code regeneration RPC (owner/admin only)
+CREATE OR REPLACE FUNCTION public.regenerate_join_code(workspace_id UUID)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_id UUID;
+  v_caller_role TEXT;
+  v_recent_attempts INT;
+  v_new_code TEXT;
+BEGIN
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  -- 1. Check permissions (owner or admin only)
+  SELECT wm.role INTO v_caller_role
+  FROM public.workspace_members wm
+  WHERE wm.workspace_id = regenerate_join_code.workspace_id
+    AND wm.user_id = v_caller_id;
+
+  IF v_caller_role IS NULL OR v_caller_role NOT IN ('owner', 'admin') THEN
+    RAISE EXCEPTION 'Permission denied. Only owners and admins can regenerate join codes.';
+  END IF;
+
+  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user
+  SELECT count(*)
+  INTO v_recent_attempts
+  FROM public.join_attempts
+  WHERE user_id = v_caller_id
+    AND attempted_at > (now() - interval '10 minutes');
+
+  IF v_recent_attempts >= 10 THEN
+    RAISE EXCEPTION 'Too many join code requests. Please try again later.';
+  END IF;
+
+  INSERT INTO public.join_attempts (user_id, attempted_at)
+  VALUES (v_caller_id, now());
+
+  -- 3. Generate new code and update workspace with authorization flag
+  v_new_code := public.generate_join_code();
+  PERFORM set_config('app.allow_join_code_regen', 'true', true);
+
+  UPDATE public.workspaces
+  SET join_code = v_new_code
+  WHERE id = regenerate_join_code.workspace_id;
+
+  -- 4. Log activity
+  INSERT INTO public.activities (type, actor_id, workspace_id, message)
+  VALUES ('join_code_regenerated', v_caller_id, regenerate_join_code.workspace_id, 'Workspace join code was regenerated.');
+
+  RETURN v_new_code;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.regenerate_join_code(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.regenerate_join_code(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.regenerate_join_code(UUID) TO authenticated;
 
 -- ============================================================================
 -- 3. RATE-LIMITED JOIN WORKSPACE RPC
@@ -1422,8 +1503,9 @@ DECLARE
   v_is_staff BOOLEAN;
 BEGIN
   v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
   IF v_caller_id IS NULL THEN
-    RAISE EXCEPTION 'Not authenticated';
+    RETURN new;
   END IF;
 
   -- Assignment's workspace
@@ -1496,11 +1578,20 @@ DECLARE
   v_caller_role TEXT;
 BEGIN
   v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
   IF v_caller_id IS NULL THEN
-    RAISE EXCEPTION 'Not authenticated';
+    RETURN NEW;
   END IF;
 
-  -- 1. Never permit changing owner_id or workspace type
+  -- 1. Keep id, created_at, owner_id, and type immutable for every caller (Items 2 & 4)
+  IF NEW.id <> OLD.id THEN
+    RAISE EXCEPTION 'Changing workspace id is not permitted.';
+  END IF;
+
+  IF NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'Changing workspace created_at is not permitted.';
+  END IF;
+
   IF NEW.owner_id <> OLD.owner_id THEN
     RAISE EXCEPTION 'Changing workspace owner_id is not permitted.';
   END IF;
@@ -1509,7 +1600,14 @@ BEGIN
     RAISE EXCEPTION 'Changing workspace type is not permitted.';
   END IF;
 
-  -- 2. Lookup caller role in this workspace
+  -- 2. Direct updates to join_code are blocked from client callers (Item 3)
+  IF NEW.join_code <> OLD.join_code THEN
+    IF current_setting('app.allow_join_code_regen', true) IS DISTINCT FROM 'true' THEN
+      RAISE EXCEPTION 'Direct updates to join_code are not permitted. Use regenerate_join_code RPC.';
+    END IF;
+  END IF;
+
+  -- 3. Lookup caller role in this workspace
   SELECT wm.role INTO v_caller_role
   FROM public.workspace_members wm
   WHERE wm.workspace_id = OLD.id
@@ -1519,13 +1617,8 @@ BEGIN
     RAISE EXCEPTION 'Access denied. You are not a member of this workspace.';
   END IF;
 
-  -- 3. Admins may ONLY change name and join_code
-  IF v_caller_role = 'admin' THEN
-    IF NEW.created_at <> OLD.created_at THEN
-      RAISE EXCEPTION 'Admins cannot change created_at.';
-    END IF;
-  ELSIF v_caller_role = 'owner' THEN
-    -- Owner can update name and join_code (owner_id and type already protected above)
+  -- 4. Only owners and admins can update workspaces
+  IF v_caller_role = ANY (ARRAY['owner'::text, 'admin'::text]) THEN
     NULL;
   ELSE
     RAISE EXCEPTION 'Permission denied. Only owners and admins can update workspaces.';
@@ -1605,7 +1698,9 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  IF OLD.role = 'owner' THEN
+  -- Block only direct deletes of an owner row (pg_trigger_depth() = 1).
+  -- Allow cascades from workspace or user deletion (pg_trigger_depth() > 1).
+  IF pg_trigger_depth() = 1 AND OLD.role = 'owner' THEN
     RAISE EXCEPTION 'Cannot delete workspace owner membership row.';
   END IF;
   RETURN OLD;
@@ -1635,8 +1730,9 @@ DECLARE
   v_is_author BOOLEAN;
 BEGIN
   v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
   IF v_caller_id IS NULL THEN
-    RAISE EXCEPTION 'Not authenticated';
+    RETURN NEW;
   END IF;
 
   SELECT r.workspace_id INTO v_workspace_id
@@ -1652,14 +1748,19 @@ BEGIN
 
   v_is_author := (OLD.author_id = v_caller_id);
 
-  -- Only PR author or owner/admin can change status
-  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
-    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
+  -- Only owner/admin may set status = 'merged' and merged_by (must equal the caller) (Item 6)
+  IF (NEW.status = 'merged' OR NEW.merged_by IS NOT NULL) THEN
+    IF NOT v_is_staff THEN
+      RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
+    END IF;
+    IF NEW.merged_by IS DISTINCT FROM v_caller_id THEN
+      RAISE EXCEPTION 'merged_by must equal the authenticated caller.';
+    END IF;
   END IF;
 
-  -- Only staff (owner/admin) or author can set merged_by
-  IF (NEW.merged_by IS DISTINCT FROM OLD.merged_by) AND NOT (v_is_staff OR v_is_author) THEN
-    RAISE EXCEPTION 'Only the pull request author or workspace staff can set merged_by.';
+  -- The author may open/close. Non-author non-staff cannot change status at all.
+  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
+    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
   END IF;
 
   RETURN NEW;
@@ -1711,6 +1812,24 @@ CREATE INDEX IF NOT EXISTS idx_commits_branch ON public.commits USING btree (bra
 CREATE INDEX IF NOT EXISTS idx_submissions_repository ON public.submissions USING btree (repository_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace_created ON public.activities USING btree (workspace_id, created_at DESC);
 
+-- Clean up any legacy duplicate sibling files (keeping the most recently updated row)
+DELETE FROM public.repository_files
+WHERE id IN (
+  SELECT id
+  FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (
+             PARTITION BY repository_id,
+                          COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                          COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                          name
+             ORDER BY updated_at DESC NULLS LAST, id DESC
+           ) AS rnum
+    FROM public.repository_files
+  ) t
+  WHERE t.rnum > 1
+);
+
 -- Unique index on repository files to prevent sibling collisions within the same directory / branch
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.repository_files (
   repository_id,
@@ -1723,17 +1842,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.re
 -- 2. CHECK CONSTRAINTS (ADDED AS NOT VALID FOR SAFE ROLLOUT)
 -- ============================================================================
 
--- Workspace name length & charset (alphanumeric, spaces, hyphens, underscores, dots; 1-100 chars)
+-- Workspace names: allow Unicode letters/digits/spaces/common punctuation
+-- (length 1-100, trimmed, no control characters or angle brackets) (Item 5)
 ALTER TABLE public.workspaces
   DROP CONSTRAINT IF EXISTS workspaces_name_format_check,
   ADD CONSTRAINT workspaces_name_format_check
   CHECK (
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
-    name ~ '^[a-zA-Z0-9_\-\. ]+$'
+    trim(name) = name AND
+    name NOT LIKE '%<%' AND
+    name NOT LIKE '%>%' AND
+    name !~ '[\x00-\x1f\x7f]'
   ) NOT VALID;
 
--- Repository name length & charset (no spaces, standard slug-compatible repo names; 1-100 chars)
+-- Workspace join codes: uppercase alphanumeric TEAM-XXXXXXXX (Item 3)
+ALTER TABLE public.workspaces
+  DROP CONSTRAINT IF EXISTS workspaces_join_code_format_check,
+  ADD CONSTRAINT workspaces_join_code_format_check
+  CHECK (join_code ~ '^TEAM-[A-Z0-9]{8}$') NOT VALID;
+
+-- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars)
 ALTER TABLE public.repositories
   DROP CONSTRAINT IF EXISTS repositories_name_format_check,
   ADD CONSTRAINT repositories_name_format_check
@@ -1743,8 +1872,7 @@ ALTER TABLE public.repositories
     name ~ '^[a-zA-Z0-9_\-\.]+$'
   ) NOT VALID;
 
--- Repository file names: consistent with execution-server safePath
--- (no '/', '\', '.', '..', no control characters, max 100 chars)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -1755,7 +1883,7 @@ ALTER TABLE public.repository_files
     name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
-    name !~ '[\x00-\x1f\x7f]'
+    name ~ '^[a-zA-Z0-9_\-\.]+$'
   ) NOT VALID;
 
 -- File content size limit (512 KB = 524,288 bytes)
