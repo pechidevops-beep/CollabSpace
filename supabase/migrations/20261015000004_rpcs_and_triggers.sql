@@ -490,7 +490,9 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  IF OLD.role = 'owner' THEN
+  -- Block only direct deletes of an owner row (pg_trigger_depth() = 1).
+  -- Allow cascades from workspace or user deletion (pg_trigger_depth() > 1).
+  IF pg_trigger_depth() = 1 AND OLD.role = 'owner' THEN
     RAISE EXCEPTION 'Cannot delete workspace owner membership row.';
   END IF;
   RETURN OLD;
