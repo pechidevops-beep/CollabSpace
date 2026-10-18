@@ -110,6 +110,10 @@ BEGIN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
+  -- 0. Clean up join attempts older than 1 day
+  DELETE FROM public.join_attempts
+  WHERE attempted_at < (now() - interval '1 day');
+
   -- 1. Rate limit: max 10 attempts per 10 minutes per user
   SELECT count(*)
   INTO v_recent_attempts
@@ -361,3 +365,212 @@ CREATE TRIGGER tr_validate_submission_update
   BEFORE UPDATE ON public.submissions
   FOR EACH ROW
   EXECUTE FUNCTION public.validate_submission_update();
+
+-- ============================================================================
+-- 7. WORKSPACE BEFORE UPDATE TRIGGER (PROTECT owner_id AND type)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.validate_workspace_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_id UUID;
+  v_caller_role TEXT;
+BEGIN
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  -- 1. Never permit changing owner_id or workspace type
+  IF NEW.owner_id <> OLD.owner_id THEN
+    RAISE EXCEPTION 'Changing workspace owner_id is not permitted.';
+  END IF;
+
+  IF NEW.type <> OLD.type THEN
+    RAISE EXCEPTION 'Changing workspace type is not permitted.';
+  END IF;
+
+  -- 2. Lookup caller role in this workspace
+  SELECT wm.role INTO v_caller_role
+  FROM public.workspace_members wm
+  WHERE wm.workspace_id = OLD.id
+    AND wm.user_id = v_caller_id;
+
+  IF v_caller_role IS NULL THEN
+    RAISE EXCEPTION 'Access denied. You are not a member of this workspace.';
+  END IF;
+
+  -- 3. Admins may ONLY change name and join_code
+  IF v_caller_role = 'admin' THEN
+    IF NEW.created_at <> OLD.created_at THEN
+      RAISE EXCEPTION 'Admins cannot change created_at.';
+    END IF;
+  ELSIF v_caller_role = 'owner' THEN
+    -- Owner can update name and join_code (owner_id and type already protected above)
+    NULL;
+  ELSE
+    RAISE EXCEPTION 'Permission denied. Only owners and admins can update workspaces.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_validate_workspace_update ON public.workspaces;
+CREATE TRIGGER tr_validate_workspace_update
+  BEFORE UPDATE ON public.workspaces
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_workspace_update();
+
+-- ============================================================================
+-- 8. SUBMISSION AFTER INSERT TRIGGER (NOTIFY WORKSPACE STAFF)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.notify_staff_on_submission()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_workspace_id UUID;
+  v_assignment_title TEXT;
+  v_student_name TEXT;
+BEGIN
+  -- Look up assignment title and workspace_id
+  SELECT a.workspace_id, a.title
+  INTO v_workspace_id, v_assignment_title
+  FROM public.assignments a
+  WHERE a.id = NEW.assignment_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  -- Look up student name
+  SELECT coalesce(p.full_name, 'A student')
+  INTO v_student_name
+  FROM public.profiles p
+  WHERE p.id = NEW.student_id;
+
+  -- Insert notification for each owner and admin of the workspace
+  INSERT INTO public.notifications (user_id, workspace_id, type, title, message)
+  SELECT
+    wm.user_id,
+    v_workspace_id,
+    'submission_received',
+    'New submission for ' || coalesce(v_assignment_title, 'assignment'),
+    v_student_name || ' submitted their work.'
+  FROM public.workspace_members wm
+  WHERE wm.workspace_id = v_workspace_id
+    AND wm.role = ANY (ARRAY['owner'::text, 'admin'::text]);
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_notify_staff_on_submission ON public.submissions;
+CREATE TRIGGER tr_notify_staff_on_submission
+  AFTER INSERT ON public.submissions
+  FOR EACH ROW
+  EXECUTE FUNCTION public.notify_staff_on_submission();
+
+-- ============================================================================
+-- 9. PREVENT OWNER MEMBERSHIP ROW DELETION TRIGGER
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.prevent_owner_member_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF OLD.role = 'owner' THEN
+    RAISE EXCEPTION 'Cannot delete workspace owner membership row.';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_prevent_owner_member_delete ON public.workspace_members;
+CREATE TRIGGER tr_prevent_owner_member_delete
+  BEFORE DELETE ON public.workspace_members
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prevent_owner_member_delete();
+
+-- ============================================================================
+-- 10. PULL REQUEST STATUS / MERGED_BY UPDATE VALIDATION TRIGGER
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.validate_pull_request_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_id UUID;
+  v_workspace_id UUID;
+  v_is_staff BOOLEAN;
+  v_is_author BOOLEAN;
+BEGIN
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  SELECT r.workspace_id INTO v_workspace_id
+  FROM public.repositories r
+  WHERE r.id = OLD.repository_id;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.workspace_members wm
+    WHERE wm.workspace_id = v_workspace_id
+      AND wm.user_id = v_caller_id
+      AND wm.role = ANY (ARRAY['owner'::text, 'admin'::text])
+  ) INTO v_is_staff;
+
+  v_is_author := (OLD.author_id = v_caller_id);
+
+  -- Only PR author or owner/admin can change status
+  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
+    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
+  END IF;
+
+  -- Only staff (owner/admin) or author can set merged_by
+  IF (NEW.merged_by IS DISTINCT FROM OLD.merged_by) AND NOT (v_is_staff OR v_is_author) THEN
+    RAISE EXCEPTION 'Only the pull request author or workspace staff can set merged_by.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_validate_pull_request_update ON public.pull_requests;
+CREATE TRIGGER tr_validate_pull_request_update
+  BEFORE UPDATE ON public.pull_requests
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_pull_request_update();
+
+-- ============================================================================
+-- 11. STANDALONE JOIN ATTEMPTS EXPIRATION CLEANUP
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.cleanup_expired_join_attempts()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  DELETE FROM public.join_attempts WHERE attempted_at < (now() - interval '1 day');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.cleanup_expired_join_attempts() FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.cleanup_expired_join_attempts() TO authenticated;

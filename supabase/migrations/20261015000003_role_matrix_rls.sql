@@ -100,14 +100,21 @@ CREATE POLICY "workspace_members_update" ON public.workspace_members
     app_private.is_workspace_role(workspace_id, ARRAY['owner'::text], (SELECT auth.uid()))
   );
 
--- Remove member: owner can remove anyone; admin can remove contributors and viewers
+-- Remove member:
+-- - Row with role 'owner' CANNOT be deleted (role <> 'owner')
+-- - A non-owner can delete their own row (leave workspace)
+-- - Owner can remove any non-owner member
+-- - Admin can remove contributors and viewers
 CREATE POLICY "workspace_members_delete" ON public.workspace_members
   FOR DELETE TO authenticated
   USING (
-    app_private.is_workspace_role(workspace_id, ARRAY['owner'::text], (SELECT auth.uid())) OR
-    (
-      app_private.is_workspace_role(workspace_id, ARRAY['admin'::text], (SELECT auth.uid())) AND
-      role = ANY (ARRAY['contributor'::text, 'viewer'::text])
+    role <> 'owner'::text AND (
+      user_id = (SELECT auth.uid()) OR
+      app_private.is_workspace_role(workspace_id, ARRAY['owner'::text], (SELECT auth.uid())) OR
+      (
+        app_private.is_workspace_role(workspace_id, ARRAY['admin'::text], (SELECT auth.uid())) AND
+        role = ANY (ARRAY['contributor'::text, 'viewer'::text])
+      )
     )
   );
 
@@ -212,9 +219,17 @@ CREATE POLICY "pull_requests_insert" ON public.pull_requests
     app_private.can_write_repo(repository_id, (SELECT auth.uid()))
   );
 
+-- Pull request update: PR author or workspace owner/admin
 CREATE POLICY "pull_requests_update" ON public.pull_requests
   FOR UPDATE TO authenticated
-  USING (app_private.can_write_repo(repository_id, (SELECT auth.uid())));
+  USING (
+    author_id = (SELECT auth.uid()) OR
+    EXISTS (
+      SELECT 1 FROM public.repositories r
+      WHERE r.id = pull_requests.repository_id
+        AND app_private.is_workspace_role(r.workspace_id, ARRAY['owner'::text, 'admin'::text], (SELECT auth.uid()))
+    )
+  );
 
 -- Pull Request Comments
 CREATE POLICY "pull_request_comments_select" ON public.pull_request_comments
