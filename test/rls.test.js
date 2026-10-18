@@ -444,4 +444,167 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
       });
     assert.ok(spoofErr !== null, 'Spoofed activity actor_id must fail');
   });
+
+  test('16. Prove: owner can delete workspace and owner membership cascades cleanly (Item 1)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // Create a temporary workspace for this cascade test
+    const { data: tempWs, error: createErr } = await clients.owner
+      .from('workspaces')
+      .insert({ name: 'Temp Cascade Workspace', type: 'team', owner_id: users.owner.id })
+      .select('*')
+      .single();
+    assert.equal(createErr, null, 'Owner must be able to create workspace');
+
+    // Confirm owner membership exists
+    const { data: memsBefore } = await adminClient
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', tempWs.id)
+      .eq('user_id', users.owner.id);
+    assert.equal(memsBefore?.length, 1, 'Owner member row must exist');
+
+    // Directly deleting owner membership row must FAIL (prevent_owner_member_delete at trigger depth 1)
+    const { error: directDelErr } = await adminClient
+      .from('workspace_members')
+      .delete()
+      .eq('workspace_id', tempWs.id)
+      .eq('user_id', users.owner.id);
+    assert.ok(directDelErr !== null, 'Direct deletion of owner membership must be blocked');
+
+    // Deleting the workspace itself must CASCADE and succeed
+    const { error: wsDelErr } = await clients.owner
+      .from('workspaces')
+      .delete()
+      .eq('id', tempWs.id);
+    assert.equal(wsDelErr, null, 'Owner must be able to delete their workspace');
+
+    // Verify member row is gone
+    const { data: memsAfter } = await adminClient
+      .from('workspace_members')
+      .select('*')
+      .eq('workspace_id', tempWs.id);
+    assert.equal(memsAfter?.length, 0, 'Workspace members must be cleanly cascaded');
+  });
+
+  test('17. Prove: deleting a user via service role cascades cleanly (Item 1)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // Create a temporary user
+    const tempEmail = `cascade_user_${Date.now()}@testcollabspace.internal`;
+    const { data: tempUser, error: userCreateErr } = await adminClient.auth.admin.createUser({
+      email: tempEmail,
+      password: 'CascadePassword123!',
+      email_confirm: true,
+      user_metadata: { full_name: 'Cascade User' },
+    });
+    assert.equal(userCreateErr, null);
+
+    // Create a workspace owned by this temporary user
+    const { data: tempUserWs } = await adminClient
+      .from('workspaces')
+      .insert({ name: 'User Cascade WS', type: 'team', owner_id: tempUser.user.id })
+      .select('*')
+      .single();
+
+    // Deleting the user via adminClient must cleanly cascade without trigger blocking
+    const { error: deleteUserErr } = await adminClient.auth.admin.deleteUser(tempUser.user.id);
+    assert.equal(deleteUserErr, null, 'Service role user deletion must cascade cleanly');
+  });
+
+  test('18. Prove: join codes - client override ignored, direct update blocked, RPC restricted (Item 3)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // 1. Weak client-supplied code is overridden by trigger to TEAM-[A-Z0-9]{8}
+    const { data: wsWithWeakCode, error: insertErr } = await clients.owner
+      .from('workspaces')
+      .insert({
+        name: 'Auto Join Code WS',
+        type: 'team',
+        owner_id: users.owner.id,
+        join_code: 'WEAK-12', // Attempt to supply weak code
+      })
+      .select('*')
+      .single();
+    assert.equal(insertErr, null);
+    assert.notEqual(wsWithWeakCode.join_code, 'WEAK-12', 'Trigger must override client-supplied join code');
+    assert.match(wsWithWeakCode.join_code, /^TEAM-[A-Z0-9]{8}$/, 'Generated join code must match format');
+
+    // 2. Admin direct update of join_code fails
+    const { error: directUpdateErr } = await clients.admin
+      .from('workspaces')
+      .update({ join_code: 'TEAM-HACKED99' })
+      .eq('id', wsWithWeakCode.id);
+    assert.ok(directUpdateErr !== null, 'Direct update to join_code must be rejected by trigger');
+
+    // 3. Contributor/outsider calling regenerate_join_code fails
+    const { error: contributorRegenErr } = await clients.studentA.rpc('regenerate_join_code', {
+      workspace_id: wsWithWeakCode.id,
+    });
+    assert.ok(contributorRegenErr !== null, 'Contributor cannot regenerate join code');
+
+    // 4. Owner calling regenerate_join_code succeeds
+    const { data: newCode, error: ownerRegenErr } = await clients.owner.rpc('regenerate_join_code', {
+      workspace_id: wsWithWeakCode.id,
+    });
+    assert.equal(ownerRegenErr, null);
+    assert.match(newCode, /^TEAM-[A-Z0-9]{8}$/);
+    assert.notEqual(newCode, wsWithWeakCode.join_code, 'Regenerated code must be different');
+
+    // Cleanup
+    await adminClient.from('workspaces').delete().eq('id', wsWithWeakCode.id);
+  });
+
+  test('19. Prove: pull request merge permissions and merged_by enforcement (Item 6)', async (t) => {
+    if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
+
+    // Student A creates a PR on their repo
+    const { data: pr, error: prErr } = await clients.studentA
+      .from('pull_requests')
+      .insert({
+        repository_id: studentARepo.id,
+        title: 'Feature implementation PR',
+        author_id: users.studentA.id,
+        source_branch: 'feature',
+        target_branch: 'main',
+        status: 'open',
+      })
+      .select('*')
+      .single();
+    assert.equal(prErr, null, 'Author should create pull request');
+
+    // Author can close and reopen their own PR
+    const { error: closeErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'closed' })
+      .eq('id', pr.id);
+    assert.equal(closeErr, null, 'Author can close their PR');
+
+    const { error: reopenErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'open' })
+      .eq('id', pr.id);
+    assert.equal(reopenErr, null, 'Author can reopen their PR');
+
+    // Student A (contributor/author) CANNOT set status = 'merged'
+    const { error: nonStaffMergeErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'merged', merged_by: users.studentA.id })
+      .eq('id', pr.id);
+    assert.ok(nonStaffMergeErr !== null, 'Non-staff author cannot merge PR');
+
+    // Owner CAN set status = 'merged' with merged_by = owner.id
+    const { error: staffMergeErr } = await clients.owner
+      .from('pull_requests')
+      .update({ status: 'merged', merged_by: users.owner.id })
+      .eq('id', pr.id);
+    assert.equal(staffMergeErr, null, 'Owner must be able to merge PR');
+
+    // Staff cannot set merged_by to someone else
+    const { error: spoofMergeErr } = await clients.owner
+      .from('pull_requests')
+      .update({ merged_by: users.studentA.id })
+      .eq('id', pr.id);
+    assert.ok(spoofMergeErr !== null, 'merged_by must equal authenticated caller');
+  });
 });
