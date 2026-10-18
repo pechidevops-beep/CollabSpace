@@ -9,6 +9,7 @@
 -- ============================================================================
 
 ALTER TABLE public.workspaces VALIDATE CONSTRAINT workspaces_name_format_check;
+ALTER TABLE public.workspaces VALIDATE CONSTRAINT workspaces_join_code_format_check;
 ALTER TABLE public.repositories VALIDATE CONSTRAINT repositories_name_format_check;
 ALTER TABLE public.repository_files VALIDATE CONSTRAINT repository_files_filename_safe_check;
 ALTER TABLE public.repository_files VALIDATE CONSTRAINT repository_files_content_limit_check;

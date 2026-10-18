@@ -17,6 +17,24 @@ CREATE INDEX IF NOT EXISTS idx_commits_branch ON public.commits USING btree (bra
 CREATE INDEX IF NOT EXISTS idx_submissions_repository ON public.submissions USING btree (repository_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace_created ON public.activities USING btree (workspace_id, created_at DESC);
 
+-- Clean up any legacy duplicate sibling files (keeping the most recently updated row)
+DELETE FROM public.repository_files
+WHERE id IN (
+  SELECT id
+  FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (
+             PARTITION BY repository_id,
+                          COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                          COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                          name
+             ORDER BY updated_at DESC NULLS LAST, id DESC
+           ) AS rnum
+    FROM public.repository_files
+  ) t
+  WHERE t.rnum > 1
+);
+
 -- Unique index on repository files to prevent sibling collisions within the same directory / branch
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.repository_files (
   repository_id,
@@ -29,17 +47,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.re
 -- 2. CHECK CONSTRAINTS (ADDED AS NOT VALID FOR SAFE ROLLOUT)
 -- ============================================================================
 
--- Workspace name length & charset (alphanumeric, spaces, hyphens, underscores, dots; 1-100 chars)
+-- Workspace names: allow Unicode letters/digits/spaces/common punctuation
+-- (length 1-100, trimmed, no control characters or angle brackets) (Item 5)
 ALTER TABLE public.workspaces
   DROP CONSTRAINT IF EXISTS workspaces_name_format_check,
   ADD CONSTRAINT workspaces_name_format_check
   CHECK (
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
-    name ~ '^[a-zA-Z0-9_\-\. ]+$'
+    trim(name) = name AND
+    name NOT LIKE '%<%' AND
+    name NOT LIKE '%>%' AND
+    name !~ '[\x00-\x1f\x7f]'
   ) NOT VALID;
 
--- Repository name length & charset (no spaces, standard slug-compatible repo names; 1-100 chars)
+-- Workspace join codes: uppercase alphanumeric TEAM-XXXXXXXX (Item 3)
+ALTER TABLE public.workspaces
+  DROP CONSTRAINT IF EXISTS workspaces_join_code_format_check,
+  ADD CONSTRAINT workspaces_join_code_format_check
+  CHECK (join_code ~ '^TEAM-[A-Z0-9]{8}$') NOT VALID;
+
+-- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars)
 ALTER TABLE public.repositories
   DROP CONSTRAINT IF EXISTS repositories_name_format_check,
   ADD CONSTRAINT repositories_name_format_check
@@ -49,8 +77,7 @@ ALTER TABLE public.repositories
     name ~ '^[a-zA-Z0-9_\-\.]+$'
   ) NOT VALID;
 
--- Repository file names: consistent with execution-server safePath
--- (no '/', '\', '.', '..', no control characters, max 100 chars)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -61,7 +88,7 @@ ALTER TABLE public.repository_files
     name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
-    name !~ '[\x00-\x1f\x7f]'
+    name ~ '^[a-zA-Z0-9_\-\.]+$'
   ) NOT VALID;
 
 -- File content size limit (512 KB = 524,288 bytes)

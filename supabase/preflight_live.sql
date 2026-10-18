@@ -9,8 +9,8 @@
 -- ============================================================================
 
 -- 1. Check workspace names
--- Criteria: 1-100 characters, alphanumeric, spaces, hyphens, underscores, dots
--- Note: "My Workspace" is completely valid.
+-- Criteria: 1-100 characters, trimmed, no control characters or angle brackets (<>)
+-- (Allows Unicode letters, digits, spaces, common punctuation. "My Workspace" is valid)
 SELECT
   'INVALID WORKSPACE NAME' AS check_name,
   id,
@@ -21,7 +21,10 @@ FROM public.workspaces
 WHERE name IS NULL
    OR char_length(name) < 1
    OR char_length(name) > 100
-   OR name !~ '^[a-zA-Z0-9_\-\. ]+$';
+   OR trim(name) <> name
+   OR name LIKE '%<%'
+   OR name LIKE '%>%'
+   OR name ~ '[\x00-\x1f\x7f]';
 
 -- 2. Check repository names
 -- Criteria: 1-100 characters, alphanumeric, hyphens, underscores, dots (no spaces)

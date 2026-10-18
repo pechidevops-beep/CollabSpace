@@ -23,6 +23,7 @@ ALTER TABLE public.assignments DROP CONSTRAINT IF EXISTS assignments_max_points_
 ALTER TABLE public.repository_files DROP CONSTRAINT IF EXISTS repository_files_content_limit_check;
 ALTER TABLE public.repository_files DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check;
 ALTER TABLE public.repositories DROP CONSTRAINT IF EXISTS repositories_name_format_check;
+ALTER TABLE public.workspaces DROP CONSTRAINT IF EXISTS workspaces_join_code_format_check;
 ALTER TABLE public.workspaces DROP CONSTRAINT IF EXISTS workspaces_name_format_check;
 
 -- Drop unique index and new indexes
