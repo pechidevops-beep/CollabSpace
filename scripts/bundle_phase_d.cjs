@@ -16,7 +16,10 @@ let applyLive = '-- ============================================================
 applyLive += '-- SUPABASE PHASE D: COMPLETE LIVE MIGRATION BUNDLE (ALL-OR-NOTHING)\n';
 applyLive += '-- ============================================================================\n';
 applyLive += '-- Execution: Run this entire script in Supabase SQL Editor for your LIVE project.\n';
-applyLive += '-- Prerequisite 1: Take a manual backup using: npx supabase db dump --db-url ...\n';
+applyLive += '-- Prerequisite 1: Take manual backups (BOTH schema DDL and --data-only) using IPv4 Session Pooler:\n';
+applyLive += '--   npx supabase db dump --db-url "postgresql://postgres.<REF>:<ENC_PASS>@aws-0-<REGION>.pooler.supabase.com:5432/postgres" -f schema_backup.sql\n';
+applyLive += '--   npx supabase db dump --data-only --use-copy --db-url "postgresql://postgres.<REF>:<ENC_PASS>@aws-0-<REGION>.pooler.supabase.com:5432/postgres" -f data_backup.sql\n';
+applyLive += '--   (Note: Password special characters must be URL-encoded; default dump is schema DDL, not "roles and schema")\n';
 applyLive += '-- Prerequisite 2: Run supabase/preflight_live.sql to verify existing data.\n';
 applyLive += '-- ============================================================================\n\n';
 applyLive += 'BEGIN;\n\n';
@@ -54,7 +57,8 @@ const allReviewFiles = [
   { label: 'VALIDATE CONSTRAINTS SCRIPT', path: 'supabase/validate_constraints.sql' },
   { label: 'SECURITY ADVISOR EQUIVALENT AUDIT QUERIES', path: 'supabase/security_advisor.sql' },
   { label: 'PRE-MIGRATION REHEARSAL SEED SCRIPT', path: 'supabase/rehearsal_seed.js' },
-  { label: 'AUTOMATED SECURITY & RLS TEST SUITE', path: 'test/rls.test.js' }
+  { label: 'AUTOMATED SECURITY & RLS TEST SUITE', path: 'test/rls.test.js' },
+  { label: 'TEST AND LIVE DEPLOYMENT RUNBOOK', path: 'docs/test-runbook.md' }
 ];
 
 let reviewBundle = '-- ============================================================================\n';

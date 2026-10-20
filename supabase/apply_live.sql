@@ -2,7 +2,10 @@
 -- SUPABASE PHASE D: COMPLETE LIVE MIGRATION BUNDLE (ALL-OR-NOTHING)
 -- ============================================================================
 -- Execution: Run this entire script in Supabase SQL Editor for your LIVE project.
--- Prerequisite 1: Take a manual backup using: npx supabase db dump --db-url ...
+-- Prerequisite 1: Take manual backups (BOTH schema DDL and --data-only) using IPv4 Session Pooler:
+--   npx supabase db dump --db-url "postgresql://postgres.<REF>:<ENC_PASS>@aws-0-<REGION>.pooler.supabase.com:5432/postgres" -f schema_backup.sql
+--   npx supabase db dump --data-only --use-copy --db-url "postgresql://postgres.<REF>:<ENC_PASS>@aws-0-<REGION>.pooler.supabase.com:5432/postgres" -f data_backup.sql
+--   (Note: Password special characters must be URL-encoded; default dump is schema DDL, not "roles and schema")
 -- Prerequisite 2: Run supabase/preflight_live.sql to verify existing data.
 -- ============================================================================
 
@@ -1149,6 +1152,16 @@ DROP POLICY IF EXISTS "workspace_members_insert_self" ON public.workspace_member
 -- 2. SQL JOIN CODE GENERATOR & REGENERATION
 -- ============================================================================
 
+-- Join code generator:
+-- Alphabet (32 chars): '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+-- Confusable characters omitted: '0' (zero), 'O' (letter O), '1' (one), 'I' (letter I)
+-- Code format: 'TEAM-XXXXXXXX' (8 random characters from alphabet)
+-- Entropy calculation:
+--   - Alphabet length: N = 32 (5 bits per character)
+--   - Code length: k = 8 characters
+--   - Bits of entropy = 8 * log2(32) = 8 * 5 = 40.0 bits
+--   - Total unique combinations: 32^8 = 1,099,511,627,776 (> 1.099 trillion)
+--   - Randomness source: extensions.gen_random_bytes(8) (cryptographically secure)
 CREATE OR REPLACE FUNCTION public.generate_join_code()
 RETURNS text
 LANGUAGE plpgsql
@@ -1156,7 +1169,7 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_chars text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  v_chars text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   v_code text;
   v_rand bytea;
   v_i int;
@@ -1178,6 +1191,22 @@ END;
 $$;
 
 ALTER TABLE public.workspaces ALTER COLUMN join_code SET DEFAULT public.generate_join_code();
+
+-- Rate-limiting table for join and regeneration attempts
+CREATE TABLE IF NOT EXISTS public.join_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  action TEXT NOT NULL DEFAULT 'join',
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT 'join';
+
+DROP INDEX IF EXISTS public.idx_join_attempts_user_time;
+CREATE INDEX IF NOT EXISTS idx_join_attempts_user_action_time ON public.join_attempts (user_id, action, attempted_at DESC);
+
+ALTER TABLE public.join_attempts ENABLE ROW LEVEL SECURITY;
+-- No client policies on join_attempts: access strictly through SECURITY DEFINER RPC
 
 -- BEFORE INSERT trigger that overrides any client-supplied join_code (Item 3)
 CREATE OR REPLACE FUNCTION public.enforce_workspace_join_code()
@@ -1239,19 +1268,20 @@ BEGIN
     RAISE EXCEPTION 'Permission denied. Only owners and admins can regenerate join codes.';
   END IF;
 
-  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user
+  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user (separate from join attempts)
   SELECT count(*)
   INTO v_recent_attempts
   FROM public.join_attempts
   WHERE user_id = v_caller_id
+    AND action = 'regenerate'
     AND attempted_at > (now() - interval '10 minutes');
 
   IF v_recent_attempts >= 10 THEN
     RAISE EXCEPTION 'Too many join code requests. Please try again later.';
   END IF;
 
-  INSERT INTO public.join_attempts (user_id, attempted_at)
-  VALUES (v_caller_id, now());
+  INSERT INTO public.join_attempts (user_id, action, attempted_at)
+  VALUES (v_caller_id, 'regenerate', now());
 
   -- 3. Generate new code and update workspace with authorization flag
   v_new_code := public.generate_join_code();
@@ -1277,17 +1307,6 @@ GRANT EXECUTE ON FUNCTION public.regenerate_join_code(UUID) TO authenticated;
 -- 3. RATE-LIMITED JOIN WORKSPACE RPC
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS public.join_attempts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_join_attempts_user_time ON public.join_attempts (user_id, attempted_at DESC);
-
-ALTER TABLE public.join_attempts ENABLE ROW LEVEL SECURITY;
--- No client policies on join_attempts: access strictly through SECURITY DEFINER RPC
-
 CREATE OR REPLACE FUNCTION public.join_workspace(code text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1310,11 +1329,12 @@ BEGIN
   DELETE FROM public.join_attempts
   WHERE attempted_at < (now() - interval '1 day');
 
-  -- 1. Rate limit: max 10 attempts per 10 minutes per user
+  -- 1. Rate limit: max 10 attempts per 10 minutes per user (tracked separately via action = 'join')
   SELECT count(*)
   INTO v_recent_attempts
   FROM public.join_attempts
   WHERE user_id = v_user_id
+    AND action = 'join'
     AND attempted_at > (now() - interval '10 minutes');
 
   IF v_recent_attempts >= 10 THEN
@@ -1322,8 +1342,8 @@ BEGIN
   END IF;
 
   -- Record attempt
-  INSERT INTO public.join_attempts (user_id, attempted_at)
-  VALUES (v_user_id, now());
+  INSERT INTO public.join_attempts (user_id, action, attempted_at)
+  VALUES (v_user_id, 'join', now());
 
   -- 2. Validate format and lookup workspace
   v_clean_code := upper(trim(code));
@@ -1714,8 +1734,53 @@ CREATE TRIGGER tr_prevent_owner_member_delete
   EXECUTE FUNCTION public.prevent_owner_member_delete();
 
 -- ============================================================================
--- 10. PULL REQUEST STATUS / MERGED_BY UPDATE VALIDATION TRIGGER
 -- ============================================================================
+-- 10. PULL REQUEST INSERT & UPDATE VALIDATION TRIGGERS
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.validate_pull_request_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_id UUID;
+BEGIN
+  v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
+  IF v_caller_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- 1. Non-service caller: author_id must match authenticated caller
+  IF NEW.author_id IS DISTINCT FROM v_caller_id THEN
+    RAISE EXCEPTION 'author_id must equal the authenticated caller.';
+  END IF;
+
+  -- 2. Initial status must be 'open'
+  IF NEW.status IS DISTINCT FROM 'open' THEN
+    RAISE EXCEPTION 'New pull requests must have status = ''open''.';
+  END IF;
+
+  -- 3. merged_by and merged_at must be NULL on insert
+  IF NEW.merged_by IS NOT NULL THEN
+    RAISE EXCEPTION 'merged_by must be NULL on new pull requests.';
+  END IF;
+
+  IF NEW.merged_at IS NOT NULL THEN
+    RAISE EXCEPTION 'merged_at must be NULL on new pull requests.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_validate_pull_request_insert ON public.pull_requests;
+CREATE TRIGGER tr_validate_pull_request_insert
+  BEFORE INSERT ON public.pull_requests
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_pull_request_insert();
 
 CREATE OR REPLACE FUNCTION public.validate_pull_request_update()
 RETURNS trigger
@@ -1748,8 +1813,9 @@ BEGIN
 
   v_is_author := (OLD.author_id = v_caller_id);
 
-  -- Only owner/admin may set status = 'merged' and merged_by (must equal the caller) (Item 6)
-  IF (NEW.status = 'merged' OR NEW.merged_by IS NOT NULL) THEN
+  -- Evaluate merge rules ONLY when status or merged_by actually changes (Item 1)
+  IF (NEW.status IS DISTINCT FROM OLD.status AND NEW.status = 'merged')
+     OR (NEW.merged_by IS DISTINCT FROM OLD.merged_by AND NEW.merged_by IS NOT NULL) THEN
     IF NOT v_is_staff THEN
       RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
     END IF;
@@ -1759,7 +1825,7 @@ BEGIN
   END IF;
 
   -- The author may open/close. Non-author non-staff cannot change status at all.
-  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
+  IF (NEW.status IS DISTINCT FROM OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
     RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
   END IF;
 
@@ -1812,23 +1878,86 @@ CREATE INDEX IF NOT EXISTS idx_commits_branch ON public.commits USING btree (bra
 CREATE INDEX IF NOT EXISTS idx_submissions_repository ON public.submissions USING btree (repository_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace_created ON public.activities USING btree (workspace_id, created_at DESC);
 
--- Clean up any legacy duplicate sibling files (keeping the most recently updated row)
-DELETE FROM public.repository_files
-WHERE id IN (
-  SELECT id
-  FROM (
-    SELECT id,
-           ROW_NUMBER() OVER (
-             PARTITION BY repository_id,
-                          COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
-                          COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
-                          name
-             ORDER BY updated_at DESC NULLS LAST, id DESC
-           ) AS rnum
-    FROM public.repository_files
-  ) t
-  WHERE t.rnum > 1
+-- Create archive table for deleted duplicate files
+CREATE TABLE IF NOT EXISTS public.repository_files_dedup_archive (
+  archive_id BIGSERIAL PRIMARY KEY,
+  archived_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  id UUID,
+  repository_id UUID,
+  branch_id UUID,
+  parent_id UUID,
+  name TEXT,
+  content TEXT,
+  is_folder BOOLEAN,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
 );
+
+-- Deduplication (Item 2):
+-- If duplicate FOLDERS exist (is_folder = true), RAISE EXCEPTION and abort transaction.
+-- For duplicate FILES (is_folder IS NOT TRUE), copy to archive table first, then delete.
+DO $$
+DECLARE
+  v_dup_folders TEXT;
+  v_dup_files_count INT := 0;
+BEGIN
+  -- A. Check for duplicate FOLDERS (is_folder = true)
+  SELECT string_agg(
+    format('repo=%s branch=%s parent=%s name="%s" (count=%s)',
+           repository_id,
+           coalesce(branch_id::text, 'null'),
+           coalesce(parent_id::text, 'null'),
+           name,
+           count(*)),
+    E'\n  '
+  )
+  INTO v_dup_folders
+  FROM public.repository_files
+  WHERE is_folder = true
+  GROUP BY repository_id, branch_id, parent_id, name
+  HAVING count(*) > 1;
+
+  IF v_dup_folders IS NOT NULL THEN
+    RAISE EXCEPTION E'Migration 5 aborted: Duplicate sibling FOLDERS detected. Manual resolution required:\n  %', v_dup_folders;
+  END IF;
+
+  -- B. Copy duplicate FILES (is_folder IS NOT TRUE) to repository_files_dedup_archive
+  WITH dup_file_candidates AS (
+    SELECT id
+    FROM (
+      SELECT id,
+             ROW_NUMBER() OVER (
+               PARTITION BY repository_id,
+                            COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                            COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                            name
+               ORDER BY updated_at DESC NULLS LAST, id DESC
+             ) AS rnum
+      FROM public.repository_files
+      WHERE coalesce(is_folder, false) = false
+    ) t
+    WHERE t.rnum > 1
+  ),
+  archived AS (
+    INSERT INTO public.repository_files_dedup_archive (
+      id, repository_id, branch_id, parent_id, name, content, is_folder, created_at, updated_at
+    )
+    SELECT
+      rf.id, rf.repository_id, rf.branch_id, rf.parent_id, rf.name, rf.content, rf.is_folder, rf.created_at, rf.updated_at
+    FROM public.repository_files rf
+    JOIN dup_file_candidates dfc ON dfc.id = rf.id
+    RETURNING 1
+  )
+  -- C. Delete duplicate FILES only
+  DELETE FROM public.repository_files
+  WHERE id IN (SELECT id FROM dup_file_candidates);
+
+  GET DIAGNOSTICS v_dup_files_count = ROW_COUNT;
+  IF v_dup_files_count > 0 THEN
+    RAISE NOTICE 'Migration 5: Archived and deleted % duplicate file(s) into repository_files_dedup_archive.', v_dup_files_count;
+  END IF;
+END;
+$$;
 
 -- Unique index on repository files to prevent sibling collisions within the same directory / branch
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.repository_files (
@@ -1843,7 +1972,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.re
 -- ============================================================================
 
 -- Workspace names: allow Unicode letters/digits/spaces/common punctuation
--- (length 1-100, trimmed, no control characters or angle brackets) (Item 5)
+-- (length 1-100, trimmed, no control characters via [[:cntrl:]] or angle brackets) (Items 3, 5)
 ALTER TABLE public.workspaces
   DROP CONSTRAINT IF EXISTS workspaces_name_format_check,
   ADD CONSTRAINT workspaces_name_format_check
@@ -1853,7 +1982,7 @@ ALTER TABLE public.workspaces
     trim(name) = name AND
     name NOT LIKE '%<%' AND
     name NOT LIKE '%>%' AND
-    name !~ '[\x00-\x1f\x7f]'
+    name !~ '[[:cntrl:]]'
   ) NOT VALID;
 
 -- Workspace join codes: uppercase alphanumeric TEAM-XXXXXXXX (Item 3)
@@ -1862,17 +1991,18 @@ ALTER TABLE public.workspaces
   ADD CONSTRAINT workspaces_join_code_format_check
   CHECK (join_code ~ '^TEAM-[A-Z0-9]{8}$') NOT VALID;
 
--- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars)
+-- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars, no dot-only names) (Item 3)
 ALTER TABLE public.repositories
   DROP CONSTRAINT IF EXISTS repositories_name_format_check,
   ADD CONSTRAINT repositories_name_format_check
   CHECK (
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
-    name ~ '^[a-zA-Z0-9_\-\.]+$'
+    name ~ '^[a-zA-Z0-9_\-\.]+$' AND
+    name !~ '^\.+$'
   ) NOT VALID;
 
--- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars, no control chars via [[:cntrl:]]) (Item 3)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -1883,7 +2013,8 @@ ALTER TABLE public.repository_files
     name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
-    name ~ '^[a-zA-Z0-9_\-\.]+$'
+    name ~ '^[a-zA-Z0-9_\-\.]+$' AND
+    name !~ '[[:cntrl:]]'
   ) NOT VALID;
 
 -- File content size limit (512 KB = 524,288 bytes)
