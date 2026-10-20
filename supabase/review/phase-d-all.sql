@@ -1104,7 +1104,7 @@ GRANT USAGE ON SCHEMA app_private TO authenticated;
 -- Get member role in workspace
 CREATE OR REPLACE FUNCTION app_private.workspace_role(
   _workspace_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS TEXT
 LANGUAGE sql
@@ -1122,7 +1122,7 @@ $$;
 -- Check if user is member of workspace
 CREATE OR REPLACE FUNCTION app_private.is_workspace_member(
   _workspace_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -1142,7 +1142,7 @@ $$;
 CREATE OR REPLACE FUNCTION app_private.is_workspace_role(
   _workspace_id UUID,
   _roles TEXT[],
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -1165,7 +1165,7 @@ $$;
 -- classroom workspace: contributor reads only repos they created; owner and admin read all; viewer none
 CREATE OR REPLACE FUNCTION app_private.can_read_repo(
   _repo_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -1216,7 +1216,7 @@ $$;
 -- classroom workspace: contributor writes only repos they created; owner and admin write; viewer none
 CREATE OR REPLACE FUNCTION app_private.can_write_repo(
   _repo_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -1895,21 +1895,27 @@ $$;
 
 ALTER TABLE public.workspaces ALTER COLUMN join_code SET DEFAULT public.generate_join_code();
 
--- Rate-limiting table for join and regeneration attempts
+-- Rate-limiting table for join and regeneration attempts (Item 4 & 5)
 CREATE TABLE IF NOT EXISTS public.join_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   action TEXT NOT NULL DEFAULT 'join',
+  ip INET,
   attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT 'join';
+ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS ip INET;
 
 DROP INDEX IF EXISTS public.idx_join_attempts_user_time;
+DROP INDEX IF EXISTS public.idx_join_attempts_user_action_time;
 CREATE INDEX IF NOT EXISTS idx_join_attempts_user_action_time ON public.join_attempts (user_id, action, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_join_attempts_ip_action_time ON public.join_attempts (ip, action, attempted_at DESC) WHERE ip IS NOT NULL;
 
+-- Enable RLS and revoke all client access from anon and authenticated (Item 5)
 ALTER TABLE public.join_attempts ENABLE ROW LEVEL SECURITY;
--- No client policies on join_attempts: access strictly through SECURITY DEFINER RPC
+REVOKE ALL ON public.join_attempts FROM anon, authenticated;
 
 -- BEFORE INSERT trigger that overrides any client-supplied join_code (Item 3)
 CREATE OR REPLACE FUNCTION public.enforce_workspace_join_code()
@@ -1943,7 +1949,7 @@ BEGIN
 END;
 $$;
 
--- Rate-limited join_code regeneration RPC (owner/admin only)
+-- Rate-limited join_code regeneration RPC (owner/admin only) (Item 4)
 CREATE OR REPLACE FUNCTION public.regenerate_join_code(workspace_id UUID)
 RETURNS text
 LANGUAGE plpgsql
@@ -1953,40 +1959,78 @@ AS $$
 DECLARE
   v_caller_id UUID;
   v_caller_role TEXT;
-  v_recent_attempts INT;
+  v_recent_user_attempts INT;
+  v_recent_ip_attempts INT;
   v_new_code TEXT;
+  v_raw_ip TEXT;
+  v_headers JSON;
+  v_ip INET := NULL;
 BEGIN
   v_caller_id := auth.uid();
   IF v_caller_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  -- 1. Check permissions (owner or admin only)
+  -- Extract client IP from request.headers if present (PostgREST), safely handling null/missing headers
+  BEGIN
+    v_raw_ip := current_setting('request.headers', true);
+    IF v_raw_ip IS NOT NULL AND v_raw_ip <> '' THEN
+      v_headers := v_raw_ip::json;
+      v_raw_ip := coalesce(
+        v_headers->>'cf-connecting-ip',
+        split_part(v_headers->>'x-forwarded-for', ',', 1),
+        v_headers->>'x-real-ip'
+      );
+      IF v_raw_ip IS NOT NULL AND trim(v_raw_ip) <> '' THEN
+        v_ip := trim(v_raw_ip)::inet;
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    v_ip := NULL;
+  END;
+
+  -- 1. Rate limiting: max 10 failed regenerations per 10 minutes per user
+  SELECT count(*)
+  INTO v_recent_user_attempts
+  FROM public.join_attempts
+  WHERE user_id = v_caller_id
+    AND action = 'regenerate'
+    AND attempted_at > (now() - interval '10 minutes');
+
+  IF v_recent_user_attempts >= 10 THEN
+    RAISE EXCEPTION 'Too many join code requests. Please try again later.';
+  END IF;
+
+  -- Secondary generous IP rate limit (100 attempts / 10 min) when IP is available
+  IF v_ip IS NOT NULL THEN
+    SELECT count(*)
+    INTO v_recent_ip_attempts
+    FROM public.join_attempts
+    WHERE ip = v_ip
+      AND action = 'regenerate'
+      AND attempted_at > (now() - interval '10 minutes');
+
+    IF v_recent_ip_attempts >= 100 THEN
+      RAISE EXCEPTION 'Too many join code requests from this network. Please try again later.';
+    END IF;
+  END IF;
+
+  -- 2. Check permissions (owner or admin only)
   SELECT wm.role INTO v_caller_role
   FROM public.workspace_members wm
   WHERE wm.workspace_id = regenerate_join_code.workspace_id
     AND wm.user_id = v_caller_id;
 
   IF v_caller_role IS NULL OR v_caller_role NOT IN ('owner', 'admin') THEN
+    -- Log failed regeneration attempt (unauthorized caller)
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_caller_id, 'regenerate', v_ip, now());
+
     RAISE EXCEPTION 'Permission denied. Only owners and admins can regenerate join codes.';
   END IF;
 
-  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user (separate from join attempts)
-  SELECT count(*)
-  INTO v_recent_attempts
-  FROM public.join_attempts
-  WHERE user_id = v_caller_id
-    AND action = 'regenerate'
-    AND attempted_at > (now() - interval '10 minutes');
-
-  IF v_recent_attempts >= 10 THEN
-    RAISE EXCEPTION 'Too many join code requests. Please try again later.';
-  END IF;
-
-  INSERT INTO public.join_attempts (user_id, action, attempted_at)
-  VALUES (v_caller_id, 'regenerate', now());
-
   -- 3. Generate new code and update workspace with authorization flag
+  -- Note: Successful regenerations do NOT log into join_attempts (count only failed attempts)
   v_new_code := public.generate_join_code();
   PERFORM set_config('app.allow_join_code_regen', 'true', true);
 
@@ -2019,38 +2063,72 @@ AS $$
 DECLARE
   v_user_id UUID;
   v_clean_code TEXT;
-  v_recent_attempts INT;
+  v_recent_user_attempts INT;
+  v_recent_ip_attempts INT;
   v_workspace RECORD;
   v_member_id UUID;
+  v_raw_ip TEXT;
+  v_headers JSON;
+  v_ip INET := NULL;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
+  -- Extract client IP from request.headers if present (PostgREST), safely handling null/missing headers
+  BEGIN
+    v_raw_ip := current_setting('request.headers', true);
+    IF v_raw_ip IS NOT NULL AND v_raw_ip <> '' THEN
+      v_headers := v_raw_ip::json;
+      v_raw_ip := coalesce(
+        v_headers->>'cf-connecting-ip',
+        split_part(v_headers->>'x-forwarded-for', ',', 1),
+        v_headers->>'x-real-ip'
+      );
+      IF v_raw_ip IS NOT NULL AND trim(v_raw_ip) <> '' THEN
+        v_ip := trim(v_raw_ip)::inet;
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    v_ip := NULL;
+  END;
+
   -- 0. Clean up join attempts older than 1 day
   DELETE FROM public.join_attempts
   WHERE attempted_at < (now() - interval '1 day');
 
-  -- 1. Rate limit: max 10 attempts per 10 minutes per user (tracked separately via action = 'join')
+  -- 1. Rate limit: max 10 failed attempts per 10 minutes per user (tracked separately via action = 'join')
   SELECT count(*)
-  INTO v_recent_attempts
+  INTO v_recent_user_attempts
   FROM public.join_attempts
   WHERE user_id = v_user_id
     AND action = 'join'
     AND attempted_at > (now() - interval '10 minutes');
 
-  IF v_recent_attempts >= 10 THEN
+  IF v_recent_user_attempts >= 10 THEN
     RAISE EXCEPTION 'Too many join attempts. Please try again later.';
   END IF;
 
-  -- Record attempt
-  INSERT INTO public.join_attempts (user_id, action, attempted_at)
-  VALUES (v_user_id, 'join', now());
+  -- Secondary generous limit per IP (100 attempts / 10 min) to accommodate shared classroom NATs
+  IF v_ip IS NOT NULL THEN
+    SELECT count(*)
+    INTO v_recent_ip_attempts
+    FROM public.join_attempts
+    WHERE ip = v_ip
+      AND action = 'join'
+      AND attempted_at > (now() - interval '10 minutes');
+
+    IF v_recent_ip_attempts >= 100 THEN
+      RAISE EXCEPTION 'Too many join attempts from this network. Please try again later.';
+    END IF;
+  END IF;
 
   -- 2. Validate format and lookup workspace
   v_clean_code := upper(trim(code));
   IF v_clean_code IS NULL OR length(v_clean_code) < 5 THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'Invalid workspace code.';
   END IF;
 
@@ -2061,10 +2139,14 @@ BEGIN
 
   -- Identical error message for wrong, non-existent, or expired code
   IF NOT FOUND THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'Invalid workspace code.';
   END IF;
 
   IF v_workspace.owner_id = v_user_id THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'You are the owner of this workspace already.';
   END IF;
 
@@ -2072,10 +2154,12 @@ BEGIN
     SELECT 1 FROM public.workspace_members
     WHERE workspace_id = v_workspace.id AND user_id = v_user_id
   ) THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'You are already a member of this workspace.';
   END IF;
 
-  -- 3. Insert contributor role only
+  -- 3. Insert contributor role only (SUCCESS - does NOT insert into join_attempts)
   INSERT INTO public.workspace_members (workspace_id, user_id, role)
   VALUES (v_workspace.id, v_user_id, 'contributor')
   RETURNING id INTO v_member_id;
@@ -2494,6 +2578,7 @@ AS $$
 DECLARE
   v_caller_id UUID;
   v_workspace_id UUID;
+  v_caller_role TEXT;
   v_is_staff BOOLEAN;
   v_is_author BOOLEAN;
 BEGIN
@@ -2503,33 +2588,68 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- 1. author_id and repository_id are strictly immutable (Item 3)
+  IF NEW.author_id IS DISTINCT FROM OLD.author_id THEN
+    RAISE EXCEPTION 'author_id is immutable';
+  END IF;
+
+  IF NEW.repository_id IS DISTINCT FROM OLD.repository_id THEN
+    RAISE EXCEPTION 'repository_id is immutable';
+  END IF;
+
+  -- 2. Lookup repository workspace and caller role (deny non-members if caller role is NULL) (Item 3)
   SELECT r.workspace_id INTO v_workspace_id
   FROM public.repositories r
   WHERE r.id = OLD.repository_id;
 
-  SELECT EXISTS (
-    SELECT 1 FROM public.workspace_members wm
-    WHERE wm.workspace_id = v_workspace_id
-      AND wm.user_id = v_caller_id
-      AND wm.role = ANY (ARRAY['owner'::text, 'admin'::text])
-  ) INTO v_is_staff;
+  SELECT wm.role INTO v_caller_role
+  FROM public.workspace_members wm
+  WHERE wm.workspace_id = v_workspace_id
+    AND wm.user_id = v_caller_id;
 
+  IF v_caller_role IS NULL THEN
+    RAISE EXCEPTION 'Access denied. You are not a member of this workspace.';
+  END IF;
+
+  v_is_staff := (v_caller_role = ANY (ARRAY['owner'::text, 'admin'::text]));
   v_is_author := (OLD.author_id = v_caller_id);
 
-  -- Evaluate merge rules ONLY when status or merged_by actually changes (Item 1)
-  IF (NEW.status IS DISTINCT FROM OLD.status AND NEW.status = 'merged')
-     OR (NEW.merged_by IS DISTINCT FROM OLD.merged_by AND NEW.merged_by IS NOT NULL) THEN
+  -- 3. Status change rules (Item 3)
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    -- Only the PR author or workspace staff (owner/admin) may change status
+    IF NOT (v_is_author OR v_is_staff) THEN
+      RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
+    END IF;
+
+    -- Only workspace owner or admin may change status from 'merged' (author cannot un-merge)
+    IF OLD.status = 'merged' AND NEW.status IS DISTINCT FROM 'merged' THEN
+      IF NOT v_is_staff THEN
+        RAISE EXCEPTION 'Only workspace owners and admins can change status from merged.';
+      END IF;
+    END IF;
+
+    -- Transition into 'merged': only owner/admin
+    IF NEW.status = 'merged' THEN
+      IF NOT v_is_staff THEN
+        RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
+      END IF;
+      IF NEW.merged_by IS DISTINCT FROM v_caller_id THEN
+        RAISE EXCEPTION 'merged_by must equal the authenticated caller.';
+      END IF;
+      IF NEW.merged_at IS NULL THEN
+        NEW.merged_at := now();
+      END IF;
+    END IF;
+  END IF;
+
+  -- 4. Merged_by update rules when status is not changing
+  IF NEW.merged_by IS DISTINCT FROM OLD.merged_by AND NEW.merged_by IS NOT NULL THEN
     IF NOT v_is_staff THEN
-      RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
+      RAISE EXCEPTION 'Permission denied. Only owners and admins can set merged_by.';
     END IF;
     IF NEW.merged_by IS DISTINCT FROM v_caller_id THEN
       RAISE EXCEPTION 'merged_by must equal the authenticated caller.';
     END IF;
-  END IF;
-
-  -- The author may open/close. Non-author non-staff cannot change status at all.
-  IF (NEW.status IS DISTINCT FROM OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
-    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
   END IF;
 
   RETURN NEW;
@@ -2559,6 +2679,21 @@ $$;
 
 REVOKE ALL ON FUNCTION public.cleanup_expired_join_attempts() FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.cleanup_expired_join_attempts() TO authenticated;
+
+-- ============================================================================
+-- 12. REVOKE EXECUTION ON TRIGGER & INTERNAL FUNCTIONS FROM public & anon
+-- ============================================================================
+
+REVOKE ALL ON FUNCTION public.handle_workspace_created() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.generate_join_code() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.enforce_workspace_join_code() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_submission_update() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_workspace_update() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.notify_staff_on_submission() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.prevent_owner_member_delete() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_pull_request_insert() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_pull_request_update() FROM PUBLIC, anon;
+
 
 
 /******************************************************************************
@@ -2639,41 +2774,61 @@ CREATE TABLE IF NOT EXISTS public.repository_files_dedup_archive (
   branch_id UUID,
   parent_id UUID,
   name TEXT,
+  type TEXT,
   content TEXT,
-  is_folder BOOLEAN,
+  size_bytes BIGINT,
+  created_by UUID,
   created_at TIMESTAMPTZ,
-  updated_at TIMESTAMPTZ
+  updated_at TIMESTAMPTZ,
+  last_modified_at TIMESTAMPTZ,
+  author_id UUID
 );
 
--- Deduplication (Item 2):
--- If duplicate FOLDERS exist (is_folder = true), RAISE EXCEPTION and abort transaction.
--- For duplicate FILES (is_folder IS NOT TRUE), copy to archive table first, then delete.
+-- Enable RLS and revoke all client access from anon and authenticated (Item 5)
+ALTER TABLE public.repository_files_dedup_archive ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.repository_files_dedup_archive FROM anon, authenticated;
+
+-- Deduplication (Item 1, 2):
+-- If duplicate FOLDERS exist (type = 'folder'), RAISE EXCEPTION and abort transaction.
+-- For duplicate FILES (type = 'file'), copy to archive table first, then delete.
 DO $$
 DECLARE
   v_dup_folders TEXT;
   v_dup_files_count INT := 0;
 BEGIN
-  -- A. Check for duplicate FOLDERS (is_folder = true)
+  -- A. Check for duplicate FOLDERS (type = 'folder')
   SELECT string_agg(
     format('repo=%s branch=%s parent=%s name="%s" (count=%s)',
            repository_id,
            coalesce(branch_id::text, 'null'),
            coalesce(parent_id::text, 'null'),
            name,
-           count(*)),
+           dup_count),
     E'\n  '
   )
   INTO v_dup_folders
-  FROM public.repository_files
-  WHERE is_folder = true
-  GROUP BY repository_id, branch_id, parent_id, name
-  HAVING count(*) > 1;
+  FROM (
+    SELECT
+      repository_id,
+      COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid) AS branch_id,
+      COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid) AS parent_id,
+      name,
+      count(*) AS dup_count
+    FROM public.repository_files
+    WHERE type = 'folder'
+    GROUP BY
+      repository_id,
+      COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+      COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+      name
+    HAVING count(*) > 1
+  ) dups;
 
   IF v_dup_folders IS NOT NULL THEN
     RAISE EXCEPTION E'Migration 5 aborted: Duplicate sibling FOLDERS detected. Manual resolution required:\n  %', v_dup_folders;
   END IF;
 
-  -- B. Copy duplicate FILES (is_folder IS NOT TRUE) to repository_files_dedup_archive
+  -- B. Copy duplicate FILES (type = 'file') to repository_files_dedup_archive
   WITH dup_file_candidates AS (
     SELECT id
     FROM (
@@ -2686,16 +2841,16 @@ BEGIN
                ORDER BY updated_at DESC NULLS LAST, id DESC
              ) AS rnum
       FROM public.repository_files
-      WHERE coalesce(is_folder, false) = false
+      WHERE type = 'file'
     ) t
     WHERE t.rnum > 1
   ),
   archived AS (
     INSERT INTO public.repository_files_dedup_archive (
-      id, repository_id, branch_id, parent_id, name, content, is_folder, created_at, updated_at
+      id, repository_id, branch_id, parent_id, name, type, content, size_bytes, created_by, created_at, updated_at, last_modified_at, author_id
     )
     SELECT
-      rf.id, rf.repository_id, rf.branch_id, rf.parent_id, rf.name, rf.content, rf.is_folder, rf.created_at, rf.updated_at
+      rf.id, rf.repository_id, rf.branch_id, rf.parent_id, rf.name, rf.type, rf.content, rf.size_bytes, rf.created_by, rf.created_at, rf.updated_at, rf.last_modified_at, rf.author_id
     FROM public.repository_files rf
     JOIN dup_file_candidates dfc ON dfc.id = rf.id
     RETURNING 1
@@ -2754,7 +2909,7 @@ ALTER TABLE public.repositories
     name !~ '^\.+$'
   ) NOT VALID;
 
--- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars, no control chars via [[:cntrl:]]) (Item 3)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars, no control chars via [[:cntrl:]]) (Item 3, 6)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -2762,7 +2917,6 @@ ALTER TABLE public.repository_files
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
     name NOT LIKE '%/%' AND
-    name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
     name ~ '^[a-zA-Z0-9_\-\.]+$' AND
@@ -2950,7 +3104,7 @@ SELECT
   name,
   count(*) AS duplicate_count
 FROM public.repository_files
-WHERE is_folder = true
+WHERE type = 'folder'
 GROUP BY
   repository_id,
   COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -2967,7 +3121,7 @@ SELECT
   name,
   count(*) AS duplicate_count
 FROM public.repository_files
-WHERE coalesce(is_folder, false) = false
+WHERE type = 'file'
 GROUP BY
   repository_id,
   COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -2986,7 +3140,7 @@ FROM public.repository_files
 WHERE octet_length(content) > 524288;
 
 -- 7. Check file names violating safePath rules
--- (Cannot contain '/', '\', '.', '..', control characters via [[:cntrl:]], or exceed 100 chars)
+-- (Cannot contain '/', '.', '..', control characters via [[:cntrl:]], or violate ^[a-zA-Z0-9_\-\.]+$)
 SELECT
   'UNSAFE FILE NAME' AS check_name,
   id,
@@ -2994,9 +3148,9 @@ SELECT
   name
 FROM public.repository_files
 WHERE name LIKE '%/%'
-   OR name LIKE '%\%'
    OR name = '.'
    OR name = '..'
+   OR name !~ '^[a-zA-Z0-9_\-\.]+$'
    OR name ~ '[[:cntrl:]]'
    OR char_length(name) < 1
    OR char_length(name) > 100;
@@ -3115,6 +3269,32 @@ SELECT
 FROM information_schema.table_privileges
 WHERE grantee = 'anon'
   AND table_schema = 'public';
+
+-- ============================================================================
+-- 5. SENSITIVE TABLES WITH RLS DISABLED OR READABLE BY authenticated (Item 5)
+-- Expected: 0 rows
+-- Flags any public table holding sensitive, internal, or rate-limiting data
+-- (join_attempts, repository_files_dedup_archive) if RLS is disabled OR if
+-- authenticated has direct SELECT privileges. Also flags any public table
+-- whatsoever where RLS is disabled.
+-- ============================================================================
+SELECT
+  t.schemaname,
+  t.tablename,
+  t.rowsecurity AS rls_enabled,
+  has_table_privilege('authenticated', quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT') AS authenticated_readable,
+  'CRITICAL: Table has RLS disabled or sensitive data is directly readable by authenticated' AS audit_issue
+FROM pg_tables t
+WHERE t.schemaname = 'public'
+  AND (
+    -- Any table with RLS disabled
+    t.rowsecurity = false
+    -- OR sensitive internal tables where authenticated has SELECT access
+    OR (
+      t.tablename IN ('join_attempts', 'repository_files_dedup_archive')
+      AND has_table_privilege('authenticated', quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT')
+    )
+  );
 
 
 /******************************************************************************
@@ -4120,6 +4300,41 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
       .update({ title: 'Feature implementation PR (Final)' })
       .eq('id', pr.id);
     assert.equal(postMergeEditErr, null, 'Editing already-merged PR title should not trigger merge error');
+
+    // 2. author_id is immutable (Item 3)
+    const { error: immutableAuthorErr } = await clients.owner
+      .from('pull_requests')
+      .update({ author_id: users.owner.id })
+      .eq('id', pr.id);
+    assert.ok(immutableAuthorErr !== null && immutableAuthorErr.message.includes('author_id is immutable'), 'author_id must be immutable');
+
+    // 3. repository_id is immutable (Item 3)
+    const { error: immutableRepoErr } = await clients.owner
+      .from('pull_requests')
+      .update({ repository_id: teamRepo.id })
+      .eq('id', pr.id);
+    assert.ok(immutableRepoErr !== null && immutableRepoErr.message.includes('repository_id is immutable'), 'repository_id must be immutable');
+
+    // 4. Non-member cannot update PR (caller role is NULL) (Item 3)
+    const { error: nonMemberUpdateErr } = await clients.outsider
+      .from('pull_requests')
+      .update({ title: 'Outsider tampered title' })
+      .eq('id', pr.id);
+    assert.ok(nonMemberUpdateErr !== null, 'Non-member must be denied from updating pull request');
+
+    // 5. Only owner/admin may leave 'merged' status; author cannot un-merge (Item 3)
+    const { error: authorUnmergeErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'open' })
+      .eq('id', pr.id);
+    assert.ok(authorUnmergeErr !== null, 'PR author cannot change status once merged');
+
+    // Owner CAN leave 'merged' status
+    const { error: ownerUnmergeErr } = await clients.owner
+      .from('pull_requests')
+      .update({ status: 'open' })
+      .eq('id', pr.id);
+    assert.equal(ownerUnmergeErr, null, 'Owner can change status from merged');
   });
 });
 
@@ -4144,6 +4359,9 @@ Before modifying the LIVE database or running migrations, take **BOTH** schema (
 
 > **Clarification on Backup Scope**:
 > A standard `supabase db dump` exports the **SQL schema DDL** (tables, functions, types, policies), **NOT** "roles and schema". To capture the full state, you must run both schema and `--data-only` backups. Cluster roles are configured by Supabase managed infrastructure.
+>
+> **CRITICAL NOTE ON `auth.users` EXCLUSION**:
+> The `supabase db dump --data-only` command dumps user data from tables in the `public` schema. It **EXCLUDES `auth.users`** because user authentication records reside in the internal `auth` schema managed by GoTrue / Supabase Auth. To back up user identities, use the Supabase dashboard export (*Authentication -> Users -> Export users as CSV*) or an explicit `--schema auth` pg_dump invocation.
 
 ### URL-Encoding Password Special Characters
 The connection URI takes the format:
@@ -4175,7 +4393,7 @@ npx supabase db dump `
   --db-url "$dbUrl" `
   -f "backup_live_schema_${timestamp}.sql"
 
-# 3. Dump Data-Only (DML: table rows using COPY statements)
+# 3. Dump Data-Only (DML: table rows using COPY statements - excludes auth.users)
 npx supabase db dump `
   --data-only `
   --use-copy `
@@ -4205,7 +4423,7 @@ npx supabase db dump \
   --db-url "$DB_URL" \
   -f "backup_live_schema_${TIMESTAMP}.sql"
 
-# 3. Dump Data-Only (DML)
+# 3. Dump Data-Only (DML - excludes auth.users)
 npx supabase db dump \
   --data-only \
   --use-copy \
@@ -4227,21 +4445,7 @@ Dumped data to backup_live_data_20261020_XXXXXX.sql
 
 ---
 
-## 1. Step-by-Step Test & Deployment Runbook
-
-The migration sequence is strictly ordered:
-
-```mermaid
-graph TD
-  A["1. Apply Baseline to TEST"] --> B["2. Run rehearsal_seed.js"]
-  B --> C["3. Run supabase/apply_live.sql"]
-  C --> D["4. Run supabase/preflight_live.sql"]
-  D --> E["5. Run supabase/validate_constraints.sql"]
-  E --> F["6. Run supabase/security_advisor.sql"]
-  F --> G["7. Run npm run test:rls"]
-```
-
----
+## 1. Step-by-Step Test Project Rehearsal Runbook
 
 ### Step 1: Apply Baseline to TEST Project
 **File**: [`supabase/migrations/20261015000000_live_schema_baseline.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/migrations/20261015000000_live_schema_baseline.sql)
@@ -4257,7 +4461,33 @@ Initializes the pre-existing schema as it exists on LIVE prior to Phase D, provi
 Success. No rows returned.
 Query took X ms.
 ```
-*(All 13 baseline tables, legacy RPCs, and baseline RLS policies are created).*
+
+**Verification Check: Exactly 18 Baseline Tables**:
+Run the following SQL in SQL Editor to verify all 18 baseline tables were created:
+```sql
+SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';
+-- Expected count: 18
+```
+
+The 18 baseline tables are:
+1. `profiles`
+2. `workspaces`
+3. `workspace_members`
+4. `classrooms`
+5. `repositories`
+6. `branches`
+7. `commits`
+8. `repository_files`
+9. `repo_files`
+10. `commit_files`
+11. `assignments`
+12. `submissions`
+13. `grades`
+14. `activities`
+15. `notifications`
+16. `pull_requests`
+17. `pull_request_comments`
+18. `repository_stars`
 
 ---
 
@@ -4423,7 +4653,115 @@ Executes 19 end-to-end integration tests:
 
 ---
 
-## 2. Execution Status Report (Real Database vs Code Verification)
+## 2. Dedicated LIVE Deployment Runbook (Production Cutover)
+
+Follow this exact sequence when deploying Phase D to the **LIVE production** Supabase project.
+
+```mermaid
+graph TD
+  A["1. Take LIVE Backups (Schema + Data)"] --> B["2. Run supabase/preflight_live.sql"]
+  B --> C["3. Run supabase/apply_live.sql"]
+  C --> D["4. Run supabase/validate_constraints.sql"]
+  D --> E["5. Run supabase/security_advisor.sql"]
+  E --> F["6. Manual Click-Through Smoke Test"]
+```
+
+> [!CAUTION]
+> **DO NOT RUN `npm run test:rls` ON LIVE**:
+> The automated test suite (`npm run test:rls`) creates test users (`test-owner-...`, `test-student-...`), dummy workspaces, assignments, and test submissions. It is designed **strictly for TEST projects or local sandbox databases** and must **NEVER** be run against LIVE production.
+
+---
+
+### LIVE Step 1: Export Complete Production Backups
+Before running any scripts in the production SQL Editor:
+1. Export the schema DDL using the IPv4 Session Pooler:
+   ```bash
+   npx supabase db dump --db-url "$DB_URL" -f "backup_live_schema_$(date +%Y%m%d_%H%M%S).sql"
+   ```
+2. Export data-only rows:
+   ```bash
+   npx supabase db dump --data-only --use-copy --db-url "$DB_URL" -f "backup_live_data_$(date +%Y%m%d_%H%M%S).sql"
+   ```
+   *(Note: The `--data-only` dump captures rows in `public` schema tables and **excludes `auth.users`**. User records should be exported separately via Supabase Dashboard -> Authentication -> Users -> Export users as CSV).*
+
+---
+
+### LIVE Step 2: Run Pre-Flight Audit
+**File**: [`supabase/preflight_live.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/preflight_live.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Paste and run the entire contents of `supabase/preflight_live.sql`.
+2. This script is **strictly read-only (SELECT-only)**.
+3. Review results:
+   - **Checks 1-4, 6-9**: Must return `0 rows`.
+   - **Check 5a (Duplicate sibling folders)**: Must return `0 rows`. If duplicate sibling folders exist, Migration 5 will abort. You must rename or delete the duplicate folder manually before proceeding.
+   - **Check 5b (Duplicate sibling files)**: Lists files that will be automatically archived into `repository_files_dedup_archive` and deduped by Migration 5.
+
+---
+
+### LIVE Step 3: Apply Live Migration Bundle
+**File**: [`supabase/apply_live.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/apply_live.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Copy the entire contents of `supabase/apply_live.sql`.
+2. Paste into the SQL Editor and execute.
+3. The bundle is wrapped in a single transaction block (`BEGIN; ... COMMIT;`):
+   - If any step fails or duplicate folders are detected, the entire transaction rolls back cleanly with zero changes applied.
+4. Verify output indicates success with no errors.
+
+---
+
+### LIVE Step 4: Validate CHECK Constraints
+**File**: [`supabase/validate_constraints.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/validate_constraints.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Execute `supabase/validate_constraints.sql`.
+2. This runs `ALTER TABLE ... VALIDATE CONSTRAINT` across all 8 newly added constraints.
+3. Because constraints were added as `NOT VALID` in Migration 5, validation verifies all rows without taking exclusive write locks on production tables.
+
+---
+
+### LIVE Step 5: Run Security Advisor Audit
+**File**: [`supabase/security_advisor.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/security_advisor.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Execute `supabase/security_advisor.sql`.
+2. Verify all 5 audit checks return `0 rows`:
+   - Check 1: Tables without RLS -> `0 rows`
+   - Check 2: Unrestricted `true` policies for `anon` -> `0 rows`
+   - Check 3: Functions executable by `anon` -> `0 rows`
+   - Check 4: Tables directly accessible by `anon` -> `0 rows`
+   - Check 5: Sensitive internal tables (`join_attempts`, `repository_files_dedup_archive`) with RLS disabled or readable by `authenticated` -> `0 rows`
+
+---
+
+### LIVE Step 6: Manual Production Smoke Test (Click-Through)
+Conduct a smoke test through the frontend web application:
+1. **Authentication**: Log in with an existing production account.
+2. **Workspaces**:
+   - Open existing workspaces and verify member list displays properly.
+   - For contributors, verify teammate emails are hidden; for owner/admins, verify emails are visible.
+   - Verify join code displays in `TEAM-XXXXXXXX` format.
+3. **Repositories & Editor**:
+   - Open a repository and load a file into Monaco Editor.
+   - Make an edit and commit changes; confirm realtime activity logs the commit.
+4. **Classroom Isolation**:
+   - In a classroom workspace, verify students see only their own repositories.
+5. **Pull Requests**:
+   - Create a pull request on a branch.
+   - Verify non-staff cannot merge; verify owner/admin can merge successfully.
+
+---
+
+## 3. Execution Status Report (Real Database vs Code Verification)
 
 As requested, here is the transparent status of what has and has not been executed against a real database:
 
@@ -4431,14 +4769,18 @@ As requested, here is the transparent status of what has and has not been execut
 | :--- | :--- | :--- |
 | **Frontend Code Build (`npm run build`)** | **RUN & VERIFIED** | Local Node.js / Vite build engine (All 3,578 modules compiled cleanly) |
 | **Service & Validator Syntax (`node --check`)** | **RUN & VERIFIED** | Local Node.js engine |
+| **Docker Throwaway Postgres Test** | **RUN & VERIFIED** | Local Docker container `throwaway-pg` (`postgres:15-alpine`) |
+| **Apply Baseline (`20261015000000`)** | **RUN & VERIFIED** | Local Docker container (Verified creates exactly 18 tables) |
+| **Rehearsal Seed Syntax & Test** | **RUN & VERIFIED** | Local Docker container |
+| **`supabase/apply_live.sql` (Phase D)** | **RUN & VERIFIED** | Local Docker container |
+| **`supabase/preflight_live.sql`** | **RUN & VERIFIED** | Local Docker container (0 violations) |
+| **`supabase/validate_constraints.sql`** | **RUN & VERIFIED** | Local Docker container (All 8 validated) |
+| **`supabase/security_advisor.sql`** | **RUN & VERIFIED** | Local Docker container (All 5 queries return 0 rows) |
 | **Apply Baseline to TEST** | **NOT RUN** | Pending execution by user with TEST credentials |
-| **`node supabase/rehearsal_seed.js`** | **NOT RUN** | Pending execution by user with TEST credentials |
-| **`supabase/apply_live.sql`** | **NOT RUN** | Awaiting user execution on TEST, then LIVE |
-| **`supabase/preflight_live.sql`** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
-| **`supabase/validate_constraints.sql`** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
-| **`supabase/security_advisor.sql`** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
-| **`npm run test:rls`** | **NOT RUN** | Awaiting test project service role key |
+| **`node supabase/rehearsal_seed.js` on TEST** | **NOT RUN** | Pending execution by user with TEST credentials |
+| **`supabase/apply_live.sql` on LIVE** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
+| **`npm run test:rls` on LIVE** | **WILL NOT RUN** | Excluded by design (creates users on production) |
 
-> **Reason**: Operating under strict instruction never to write to or touch the LIVE database, and no live credentials exist in `.env.test` in this environment. All SQL syntax, transactions, frontend validations, and schemas have been audited, linted, and verified locally.
+> **Reason**: Operating under strict instruction never to write to or touch the LIVE database, and no live credentials exist in `.env.test` in this environment. All SQL syntax, transactions, frontend validations, and schemas have been rehearsed and verified in a throwaway local Docker container.
 
 
