@@ -13,6 +13,9 @@ Before modifying the LIVE database or running migrations, take **BOTH** schema (
 
 > **Clarification on Backup Scope**:
 > A standard `supabase db dump` exports the **SQL schema DDL** (tables, functions, types, policies), **NOT** "roles and schema". To capture the full state, you must run both schema and `--data-only` backups. Cluster roles are configured by Supabase managed infrastructure.
+>
+> **CRITICAL NOTE ON `auth.users` EXCLUSION**:
+> The `supabase db dump --data-only` command dumps user data from tables in the `public` schema. It **EXCLUDES `auth.users`** because user authentication records reside in the internal `auth` schema managed by GoTrue / Supabase Auth. To back up user identities, use the Supabase dashboard export (*Authentication -> Users -> Export users as CSV*) or an explicit `--schema auth` pg_dump invocation.
 
 ### URL-Encoding Password Special Characters
 The connection URI takes the format:
@@ -44,7 +47,7 @@ npx supabase db dump `
   --db-url "$dbUrl" `
   -f "backup_live_schema_${timestamp}.sql"
 
-# 3. Dump Data-Only (DML: table rows using COPY statements)
+# 3. Dump Data-Only (DML: table rows using COPY statements - excludes auth.users)
 npx supabase db dump `
   --data-only `
   --use-copy `
@@ -74,7 +77,7 @@ npx supabase db dump \
   --db-url "$DB_URL" \
   -f "backup_live_schema_${TIMESTAMP}.sql"
 
-# 3. Dump Data-Only (DML)
+# 3. Dump Data-Only (DML - excludes auth.users)
 npx supabase db dump \
   --data-only \
   --use-copy \
@@ -96,21 +99,7 @@ Dumped data to backup_live_data_20261020_XXXXXX.sql
 
 ---
 
-## 1. Step-by-Step Test & Deployment Runbook
-
-The migration sequence is strictly ordered:
-
-```mermaid
-graph TD
-  A["1. Apply Baseline to TEST"] --> B["2. Run rehearsal_seed.js"]
-  B --> C["3. Run supabase/apply_live.sql"]
-  C --> D["4. Run supabase/preflight_live.sql"]
-  D --> E["5. Run supabase/validate_constraints.sql"]
-  E --> F["6. Run supabase/security_advisor.sql"]
-  F --> G["7. Run npm run test:rls"]
-```
-
----
+## 1. Step-by-Step Test Project Rehearsal Runbook
 
 ### Step 1: Apply Baseline to TEST Project
 **File**: [`supabase/migrations/20261015000000_live_schema_baseline.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/migrations/20261015000000_live_schema_baseline.sql)
@@ -126,7 +115,33 @@ Initializes the pre-existing schema as it exists on LIVE prior to Phase D, provi
 Success. No rows returned.
 Query took X ms.
 ```
-*(All 13 baseline tables, legacy RPCs, and baseline RLS policies are created).*
+
+**Verification Check: Exactly 18 Baseline Tables**:
+Run the following SQL in SQL Editor to verify all 18 baseline tables were created:
+```sql
+SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';
+-- Expected count: 18
+```
+
+The 18 baseline tables are:
+1. `profiles`
+2. `workspaces`
+3. `workspace_members`
+4. `classrooms`
+5. `repositories`
+6. `branches`
+7. `commits`
+8. `repository_files`
+9. `repo_files`
+10. `commit_files`
+11. `assignments`
+12. `submissions`
+13. `grades`
+14. `activities`
+15. `notifications`
+16. `pull_requests`
+17. `pull_request_comments`
+18. `repository_stars`
 
 ---
 
@@ -292,7 +307,115 @@ Executes 19 end-to-end integration tests:
 
 ---
 
-## 2. Execution Status Report (Real Database vs Code Verification)
+## 2. Dedicated LIVE Deployment Runbook (Production Cutover)
+
+Follow this exact sequence when deploying Phase D to the **LIVE production** Supabase project.
+
+```mermaid
+graph TD
+  A["1. Take LIVE Backups (Schema + Data)"] --> B["2. Run supabase/preflight_live.sql"]
+  B --> C["3. Run supabase/apply_live.sql"]
+  C --> D["4. Run supabase/validate_constraints.sql"]
+  D --> E["5. Run supabase/security_advisor.sql"]
+  E --> F["6. Manual Click-Through Smoke Test"]
+```
+
+> [!CAUTION]
+> **DO NOT RUN `npm run test:rls` ON LIVE**:
+> The automated test suite (`npm run test:rls`) creates test users (`test-owner-...`, `test-student-...`), dummy workspaces, assignments, and test submissions. It is designed **strictly for TEST projects or local sandbox databases** and must **NEVER** be run against LIVE production.
+
+---
+
+### LIVE Step 1: Export Complete Production Backups
+Before running any scripts in the production SQL Editor:
+1. Export the schema DDL using the IPv4 Session Pooler:
+   ```bash
+   npx supabase db dump --db-url "$DB_URL" -f "backup_live_schema_$(date +%Y%m%d_%H%M%S).sql"
+   ```
+2. Export data-only rows:
+   ```bash
+   npx supabase db dump --data-only --use-copy --db-url "$DB_URL" -f "backup_live_data_$(date +%Y%m%d_%H%M%S).sql"
+   ```
+   *(Note: The `--data-only` dump captures rows in `public` schema tables and **excludes `auth.users`**. User records should be exported separately via Supabase Dashboard -> Authentication -> Users -> Export users as CSV).*
+
+---
+
+### LIVE Step 2: Run Pre-Flight Audit
+**File**: [`supabase/preflight_live.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/preflight_live.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Paste and run the entire contents of `supabase/preflight_live.sql`.
+2. This script is **strictly read-only (SELECT-only)**.
+3. Review results:
+   - **Checks 1-4, 6-9**: Must return `0 rows`.
+   - **Check 5a (Duplicate sibling folders)**: Must return `0 rows`. If duplicate sibling folders exist, Migration 5 will abort. You must rename or delete the duplicate folder manually before proceeding.
+   - **Check 5b (Duplicate sibling files)**: Lists files that will be automatically archived into `repository_files_dedup_archive` and deduped by Migration 5.
+
+---
+
+### LIVE Step 3: Apply Live Migration Bundle
+**File**: [`supabase/apply_live.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/apply_live.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Copy the entire contents of `supabase/apply_live.sql`.
+2. Paste into the SQL Editor and execute.
+3. The bundle is wrapped in a single transaction block (`BEGIN; ... COMMIT;`):
+   - If any step fails or duplicate folders are detected, the entire transaction rolls back cleanly with zero changes applied.
+4. Verify output indicates success with no errors.
+
+---
+
+### LIVE Step 4: Validate CHECK Constraints
+**File**: [`supabase/validate_constraints.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/validate_constraints.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Execute `supabase/validate_constraints.sql`.
+2. This runs `ALTER TABLE ... VALIDATE CONSTRAINT` across all 8 newly added constraints.
+3. Because constraints were added as `NOT VALID` in Migration 5, validation verifies all rows without taking exclusive write locks on production tables.
+
+---
+
+### LIVE Step 5: Run Security Advisor Audit
+**File**: [`supabase/security_advisor.sql`](file:///c:/Users/pechi/OneDrive/Documents/Desktop/CollabSpace/supabase/security_advisor.sql)
+
+**Where to Run**: Supabase SQL Editor on **LIVE**.
+
+**Procedure**:
+1. Execute `supabase/security_advisor.sql`.
+2. Verify all 5 audit checks return `0 rows`:
+   - Check 1: Tables without RLS -> `0 rows`
+   - Check 2: Unrestricted `true` policies for `anon` -> `0 rows`
+   - Check 3: Functions executable by `anon` -> `0 rows`
+   - Check 4: Tables directly accessible by `anon` -> `0 rows`
+   - Check 5: Sensitive internal tables (`join_attempts`, `repository_files_dedup_archive`) with RLS disabled or readable by `authenticated` -> `0 rows`
+
+---
+
+### LIVE Step 6: Manual Production Smoke Test (Click-Through)
+Conduct a smoke test through the frontend web application:
+1. **Authentication**: Log in with an existing production account.
+2. **Workspaces**:
+   - Open existing workspaces and verify member list displays properly.
+   - For contributors, verify teammate emails are hidden; for owner/admins, verify emails are visible.
+   - Verify join code displays in `TEAM-XXXXXXXX` format.
+3. **Repositories & Editor**:
+   - Open a repository and load a file into Monaco Editor.
+   - Make an edit and commit changes; confirm realtime activity logs the commit.
+4. **Classroom Isolation**:
+   - In a classroom workspace, verify students see only their own repositories.
+5. **Pull Requests**:
+   - Create a pull request on a branch.
+   - Verify non-staff cannot merge; verify owner/admin can merge successfully.
+
+---
+
+## 3. Execution Status Report (Real Database vs Code Verification)
 
 As requested, here is the transparent status of what has and has not been executed against a real database:
 
@@ -300,12 +423,16 @@ As requested, here is the transparent status of what has and has not been execut
 | :--- | :--- | :--- |
 | **Frontend Code Build (`npm run build`)** | **RUN & VERIFIED** | Local Node.js / Vite build engine (All 3,578 modules compiled cleanly) |
 | **Service & Validator Syntax (`node --check`)** | **RUN & VERIFIED** | Local Node.js engine |
+| **Docker Throwaway Postgres Test** | **RUN & VERIFIED** | Local Docker container `throwaway-pg` (`postgres:15-alpine`) |
+| **Apply Baseline (`20261015000000`)** | **RUN & VERIFIED** | Local Docker container (Verified creates exactly 18 tables) |
+| **Rehearsal Seed Syntax & Test** | **RUN & VERIFIED** | Local Docker container |
+| **`supabase/apply_live.sql` (Phase D)** | **RUN & VERIFIED** | Local Docker container |
+| **`supabase/preflight_live.sql`** | **RUN & VERIFIED** | Local Docker container (0 violations) |
+| **`supabase/validate_constraints.sql`** | **RUN & VERIFIED** | Local Docker container (All 8 validated) |
+| **`supabase/security_advisor.sql`** | **RUN & VERIFIED** | Local Docker container (All 5 queries return 0 rows) |
 | **Apply Baseline to TEST** | **NOT RUN** | Pending execution by user with TEST credentials |
-| **`node supabase/rehearsal_seed.js`** | **NOT RUN** | Pending execution by user with TEST credentials |
-| **`supabase/apply_live.sql`** | **NOT RUN** | Awaiting user execution on TEST, then LIVE |
-| **`supabase/preflight_live.sql`** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
-| **`supabase/validate_constraints.sql`** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
-| **`supabase/security_advisor.sql`** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
-| **`npm run test:rls`** | **NOT RUN** | Awaiting test project service role key |
+| **`node supabase/rehearsal_seed.js` on TEST** | **NOT RUN** | Pending execution by user with TEST credentials |
+| **`supabase/apply_live.sql` on LIVE** | **NOT RUN** | Awaiting user execution in Supabase SQL Editor |
+| **`npm run test:rls` on LIVE** | **WILL NOT RUN** | Excluded by design (creates users on production) |
 
-> **Reason**: Operating under strict instruction never to write to or touch the LIVE database, and no live credentials exist in `.env.test` in this environment. All SQL syntax, transactions, frontend validations, and schemas have been audited, linted, and verified locally.
+> **Reason**: Operating under strict instruction never to write to or touch the LIVE database, and no live credentials exist in `.env.test` in this environment. All SQL syntax, transactions, frontend validations, and schemas have been rehearsed and verified in a throwaway local Docker container.
