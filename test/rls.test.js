@@ -660,5 +660,40 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
       .update({ title: 'Feature implementation PR (Final)' })
       .eq('id', pr.id);
     assert.equal(postMergeEditErr, null, 'Editing already-merged PR title should not trigger merge error');
+
+    // 2. author_id is immutable (Item 3)
+    const { error: immutableAuthorErr } = await clients.owner
+      .from('pull_requests')
+      .update({ author_id: users.owner.id })
+      .eq('id', pr.id);
+    assert.ok(immutableAuthorErr !== null && immutableAuthorErr.message.includes('author_id is immutable'), 'author_id must be immutable');
+
+    // 3. repository_id is immutable (Item 3)
+    const { error: immutableRepoErr } = await clients.owner
+      .from('pull_requests')
+      .update({ repository_id: teamRepo.id })
+      .eq('id', pr.id);
+    assert.ok(immutableRepoErr !== null && immutableRepoErr.message.includes('repository_id is immutable'), 'repository_id must be immutable');
+
+    // 4. Non-member cannot update PR (caller role is NULL) (Item 3)
+    const { error: nonMemberUpdateErr } = await clients.outsider
+      .from('pull_requests')
+      .update({ title: 'Outsider tampered title' })
+      .eq('id', pr.id);
+    assert.ok(nonMemberUpdateErr !== null, 'Non-member must be denied from updating pull request');
+
+    // 5. Only owner/admin may leave 'merged' status; author cannot un-merge (Item 3)
+    const { error: authorUnmergeErr } = await clients.studentA
+      .from('pull_requests')
+      .update({ status: 'open' })
+      .eq('id', pr.id);
+    assert.ok(authorUnmergeErr !== null, 'PR author cannot change status once merged');
+
+    // Owner CAN leave 'merged' status
+    const { error: ownerUnmergeErr } = await clients.owner
+      .from('pull_requests')
+      .update({ status: 'open' })
+      .eq('id', pr.id);
+    assert.equal(ownerUnmergeErr, null, 'Owner can change status from merged');
   });
 });

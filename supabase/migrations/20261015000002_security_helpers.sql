@@ -18,7 +18,7 @@ GRANT USAGE ON SCHEMA app_private TO authenticated;
 -- Get member role in workspace
 CREATE OR REPLACE FUNCTION app_private.workspace_role(
   _workspace_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS TEXT
 LANGUAGE sql
@@ -36,7 +36,7 @@ $$;
 -- Check if user is member of workspace
 CREATE OR REPLACE FUNCTION app_private.is_workspace_member(
   _workspace_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -56,7 +56,7 @@ $$;
 CREATE OR REPLACE FUNCTION app_private.is_workspace_role(
   _workspace_id UUID,
   _roles TEXT[],
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -79,7 +79,7 @@ $$;
 -- classroom workspace: contributor reads only repos they created; owner and admin read all; viewer none
 CREATE OR REPLACE FUNCTION app_private.can_read_repo(
   _repo_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -130,7 +130,7 @@ $$;
 -- classroom workspace: contributor writes only repos they created; owner and admin write; viewer none
 CREATE OR REPLACE FUNCTION app_private.can_write_repo(
   _repo_id UUID,
-  _user_id UUID DEFAULT (SELECT auth.uid())
+  _user_id UUID DEFAULT auth.uid()
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql

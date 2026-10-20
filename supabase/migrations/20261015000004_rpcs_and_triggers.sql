@@ -74,21 +74,27 @@ $$;
 
 ALTER TABLE public.workspaces ALTER COLUMN join_code SET DEFAULT public.generate_join_code();
 
--- Rate-limiting table for join and regeneration attempts
+-- Rate-limiting table for join and regeneration attempts (Item 4 & 5)
 CREATE TABLE IF NOT EXISTS public.join_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   action TEXT NOT NULL DEFAULT 'join',
+  ip INET,
   attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT 'join';
+ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS ip INET;
 
 DROP INDEX IF EXISTS public.idx_join_attempts_user_time;
+DROP INDEX IF EXISTS public.idx_join_attempts_user_action_time;
 CREATE INDEX IF NOT EXISTS idx_join_attempts_user_action_time ON public.join_attempts (user_id, action, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_join_attempts_ip_action_time ON public.join_attempts (ip, action, attempted_at DESC) WHERE ip IS NOT NULL;
 
+-- Enable RLS and revoke all client access from anon and authenticated (Item 5)
 ALTER TABLE public.join_attempts ENABLE ROW LEVEL SECURITY;
--- No client policies on join_attempts: access strictly through SECURITY DEFINER RPC
+REVOKE ALL ON public.join_attempts FROM anon, authenticated;
 
 -- BEFORE INSERT trigger that overrides any client-supplied join_code (Item 3)
 CREATE OR REPLACE FUNCTION public.enforce_workspace_join_code()
@@ -122,7 +128,7 @@ BEGIN
 END;
 $$;
 
--- Rate-limited join_code regeneration RPC (owner/admin only)
+-- Rate-limited join_code regeneration RPC (owner/admin only) (Item 4)
 CREATE OR REPLACE FUNCTION public.regenerate_join_code(workspace_id UUID)
 RETURNS text
 LANGUAGE plpgsql
@@ -132,40 +138,78 @@ AS $$
 DECLARE
   v_caller_id UUID;
   v_caller_role TEXT;
-  v_recent_attempts INT;
+  v_recent_user_attempts INT;
+  v_recent_ip_attempts INT;
   v_new_code TEXT;
+  v_raw_ip TEXT;
+  v_headers JSON;
+  v_ip INET := NULL;
 BEGIN
   v_caller_id := auth.uid();
   IF v_caller_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  -- 1. Check permissions (owner or admin only)
+  -- Extract client IP from request.headers if present (PostgREST), safely handling null/missing headers
+  BEGIN
+    v_raw_ip := current_setting('request.headers', true);
+    IF v_raw_ip IS NOT NULL AND v_raw_ip <> '' THEN
+      v_headers := v_raw_ip::json;
+      v_raw_ip := coalesce(
+        v_headers->>'cf-connecting-ip',
+        split_part(v_headers->>'x-forwarded-for', ',', 1),
+        v_headers->>'x-real-ip'
+      );
+      IF v_raw_ip IS NOT NULL AND trim(v_raw_ip) <> '' THEN
+        v_ip := trim(v_raw_ip)::inet;
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    v_ip := NULL;
+  END;
+
+  -- 1. Rate limiting: max 10 failed regenerations per 10 minutes per user
+  SELECT count(*)
+  INTO v_recent_user_attempts
+  FROM public.join_attempts
+  WHERE user_id = v_caller_id
+    AND action = 'regenerate'
+    AND attempted_at > (now() - interval '10 minutes');
+
+  IF v_recent_user_attempts >= 10 THEN
+    RAISE EXCEPTION 'Too many join code requests. Please try again later.';
+  END IF;
+
+  -- Secondary generous IP rate limit (100 attempts / 10 min) when IP is available
+  IF v_ip IS NOT NULL THEN
+    SELECT count(*)
+    INTO v_recent_ip_attempts
+    FROM public.join_attempts
+    WHERE ip = v_ip
+      AND action = 'regenerate'
+      AND attempted_at > (now() - interval '10 minutes');
+
+    IF v_recent_ip_attempts >= 100 THEN
+      RAISE EXCEPTION 'Too many join code requests from this network. Please try again later.';
+    END IF;
+  END IF;
+
+  -- 2. Check permissions (owner or admin only)
   SELECT wm.role INTO v_caller_role
   FROM public.workspace_members wm
   WHERE wm.workspace_id = regenerate_join_code.workspace_id
     AND wm.user_id = v_caller_id;
 
   IF v_caller_role IS NULL OR v_caller_role NOT IN ('owner', 'admin') THEN
+    -- Log failed regeneration attempt (unauthorized caller)
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_caller_id, 'regenerate', v_ip, now());
+
     RAISE EXCEPTION 'Permission denied. Only owners and admins can regenerate join codes.';
   END IF;
 
-  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user (separate from join attempts)
-  SELECT count(*)
-  INTO v_recent_attempts
-  FROM public.join_attempts
-  WHERE user_id = v_caller_id
-    AND action = 'regenerate'
-    AND attempted_at > (now() - interval '10 minutes');
-
-  IF v_recent_attempts >= 10 THEN
-    RAISE EXCEPTION 'Too many join code requests. Please try again later.';
-  END IF;
-
-  INSERT INTO public.join_attempts (user_id, action, attempted_at)
-  VALUES (v_caller_id, 'regenerate', now());
-
   -- 3. Generate new code and update workspace with authorization flag
+  -- Note: Successful regenerations do NOT log into join_attempts (count only failed attempts)
   v_new_code := public.generate_join_code();
   PERFORM set_config('app.allow_join_code_regen', 'true', true);
 
@@ -198,38 +242,72 @@ AS $$
 DECLARE
   v_user_id UUID;
   v_clean_code TEXT;
-  v_recent_attempts INT;
+  v_recent_user_attempts INT;
+  v_recent_ip_attempts INT;
   v_workspace RECORD;
   v_member_id UUID;
+  v_raw_ip TEXT;
+  v_headers JSON;
+  v_ip INET := NULL;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
+  -- Extract client IP from request.headers if present (PostgREST), safely handling null/missing headers
+  BEGIN
+    v_raw_ip := current_setting('request.headers', true);
+    IF v_raw_ip IS NOT NULL AND v_raw_ip <> '' THEN
+      v_headers := v_raw_ip::json;
+      v_raw_ip := coalesce(
+        v_headers->>'cf-connecting-ip',
+        split_part(v_headers->>'x-forwarded-for', ',', 1),
+        v_headers->>'x-real-ip'
+      );
+      IF v_raw_ip IS NOT NULL AND trim(v_raw_ip) <> '' THEN
+        v_ip := trim(v_raw_ip)::inet;
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    v_ip := NULL;
+  END;
+
   -- 0. Clean up join attempts older than 1 day
   DELETE FROM public.join_attempts
   WHERE attempted_at < (now() - interval '1 day');
 
-  -- 1. Rate limit: max 10 attempts per 10 minutes per user (tracked separately via action = 'join')
+  -- 1. Rate limit: max 10 failed attempts per 10 minutes per user (tracked separately via action = 'join')
   SELECT count(*)
-  INTO v_recent_attempts
+  INTO v_recent_user_attempts
   FROM public.join_attempts
   WHERE user_id = v_user_id
     AND action = 'join'
     AND attempted_at > (now() - interval '10 minutes');
 
-  IF v_recent_attempts >= 10 THEN
+  IF v_recent_user_attempts >= 10 THEN
     RAISE EXCEPTION 'Too many join attempts. Please try again later.';
   END IF;
 
-  -- Record attempt
-  INSERT INTO public.join_attempts (user_id, action, attempted_at)
-  VALUES (v_user_id, 'join', now());
+  -- Secondary generous limit per IP (100 attempts / 10 min) to accommodate shared classroom NATs
+  IF v_ip IS NOT NULL THEN
+    SELECT count(*)
+    INTO v_recent_ip_attempts
+    FROM public.join_attempts
+    WHERE ip = v_ip
+      AND action = 'join'
+      AND attempted_at > (now() - interval '10 minutes');
+
+    IF v_recent_ip_attempts >= 100 THEN
+      RAISE EXCEPTION 'Too many join attempts from this network. Please try again later.';
+    END IF;
+  END IF;
 
   -- 2. Validate format and lookup workspace
   v_clean_code := upper(trim(code));
   IF v_clean_code IS NULL OR length(v_clean_code) < 5 THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'Invalid workspace code.';
   END IF;
 
@@ -240,10 +318,14 @@ BEGIN
 
   -- Identical error message for wrong, non-existent, or expired code
   IF NOT FOUND THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'Invalid workspace code.';
   END IF;
 
   IF v_workspace.owner_id = v_user_id THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'You are the owner of this workspace already.';
   END IF;
 
@@ -251,10 +333,12 @@ BEGIN
     SELECT 1 FROM public.workspace_members
     WHERE workspace_id = v_workspace.id AND user_id = v_user_id
   ) THEN
+    INSERT INTO public.join_attempts (user_id, action, ip, attempted_at)
+    VALUES (v_user_id, 'join', v_ip, now());
     RAISE EXCEPTION 'You are already a member of this workspace.';
   END IF;
 
-  -- 3. Insert contributor role only
+  -- 3. Insert contributor role only (SUCCESS - does NOT insert into join_attempts)
   INSERT INTO public.workspace_members (workspace_id, user_id, role)
   VALUES (v_workspace.id, v_user_id, 'contributor')
   RETURNING id INTO v_member_id;
@@ -673,6 +757,7 @@ AS $$
 DECLARE
   v_caller_id UUID;
   v_workspace_id UUID;
+  v_caller_role TEXT;
   v_is_staff BOOLEAN;
   v_is_author BOOLEAN;
 BEGIN
@@ -682,33 +767,68 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- 1. author_id and repository_id are strictly immutable (Item 3)
+  IF NEW.author_id IS DISTINCT FROM OLD.author_id THEN
+    RAISE EXCEPTION 'author_id is immutable';
+  END IF;
+
+  IF NEW.repository_id IS DISTINCT FROM OLD.repository_id THEN
+    RAISE EXCEPTION 'repository_id is immutable';
+  END IF;
+
+  -- 2. Lookup repository workspace and caller role (deny non-members if caller role is NULL) (Item 3)
   SELECT r.workspace_id INTO v_workspace_id
   FROM public.repositories r
   WHERE r.id = OLD.repository_id;
 
-  SELECT EXISTS (
-    SELECT 1 FROM public.workspace_members wm
-    WHERE wm.workspace_id = v_workspace_id
-      AND wm.user_id = v_caller_id
-      AND wm.role = ANY (ARRAY['owner'::text, 'admin'::text])
-  ) INTO v_is_staff;
+  SELECT wm.role INTO v_caller_role
+  FROM public.workspace_members wm
+  WHERE wm.workspace_id = v_workspace_id
+    AND wm.user_id = v_caller_id;
 
+  IF v_caller_role IS NULL THEN
+    RAISE EXCEPTION 'Access denied. You are not a member of this workspace.';
+  END IF;
+
+  v_is_staff := (v_caller_role = ANY (ARRAY['owner'::text, 'admin'::text]));
   v_is_author := (OLD.author_id = v_caller_id);
 
-  -- Evaluate merge rules ONLY when status or merged_by actually changes (Item 1)
-  IF (NEW.status IS DISTINCT FROM OLD.status AND NEW.status = 'merged')
-     OR (NEW.merged_by IS DISTINCT FROM OLD.merged_by AND NEW.merged_by IS NOT NULL) THEN
+  -- 3. Status change rules (Item 3)
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    -- Only the PR author or workspace staff (owner/admin) may change status
+    IF NOT (v_is_author OR v_is_staff) THEN
+      RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
+    END IF;
+
+    -- Only workspace owner or admin may change status from 'merged' (author cannot un-merge)
+    IF OLD.status = 'merged' AND NEW.status IS DISTINCT FROM 'merged' THEN
+      IF NOT v_is_staff THEN
+        RAISE EXCEPTION 'Only workspace owners and admins can change status from merged.';
+      END IF;
+    END IF;
+
+    -- Transition into 'merged': only owner/admin
+    IF NEW.status = 'merged' THEN
+      IF NOT v_is_staff THEN
+        RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
+      END IF;
+      IF NEW.merged_by IS DISTINCT FROM v_caller_id THEN
+        RAISE EXCEPTION 'merged_by must equal the authenticated caller.';
+      END IF;
+      IF NEW.merged_at IS NULL THEN
+        NEW.merged_at := now();
+      END IF;
+    END IF;
+  END IF;
+
+  -- 4. Merged_by update rules when status is not changing
+  IF NEW.merged_by IS DISTINCT FROM OLD.merged_by AND NEW.merged_by IS NOT NULL THEN
     IF NOT v_is_staff THEN
-      RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
+      RAISE EXCEPTION 'Permission denied. Only owners and admins can set merged_by.';
     END IF;
     IF NEW.merged_by IS DISTINCT FROM v_caller_id THEN
       RAISE EXCEPTION 'merged_by must equal the authenticated caller.';
     END IF;
-  END IF;
-
-  -- The author may open/close. Non-author non-staff cannot change status at all.
-  IF (NEW.status IS DISTINCT FROM OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
-    RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
   END IF;
 
   RETURN NEW;
