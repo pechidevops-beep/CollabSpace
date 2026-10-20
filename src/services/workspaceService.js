@@ -64,7 +64,31 @@ export async function getWorkspaceMemberRole(workspaceId, userId) {
   return data?.role ?? null;
 }
 
+export function validateWorkspaceName(name) {
+  if (!name || typeof name !== 'string') {
+    return 'Workspace name is required.';
+  }
+  if (name.length < 1 || name.length > 100) {
+    return 'Workspace name must be between 1 and 100 characters.';
+  }
+  if (name.trim() !== name) {
+    return 'Workspace name cannot contain leading or trailing spaces.';
+  }
+  if (name.includes('<') || name.includes('>')) {
+    return 'Workspace name cannot contain angle brackets (< or >).';
+  }
+  if (/[\x00-\x1f\x7f]/.test(name)) {
+    return 'Workspace name cannot contain control characters.';
+  }
+  return null;
+}
+
 export async function createWorkspace({ ownerId, name, type = 'team' }) {
+  const validationError = validateWorkspaceName(name);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const { data: workspace, error: insertError } = await supabase
     .from('workspaces')
     .insert({
@@ -76,9 +100,10 @@ export async function createWorkspace({ ownerId, name, type = 'team' }) {
     .maybeSingle();
 
   if (insertError || !workspace) {
-    const msg = insertError?.message?.includes('violates check constraint')
-      ? 'Workspace name must be between 1 and 100 characters and contain only letters, numbers, spaces, hyphens, and dots.'
-      : (insertError?.message ?? 'Failed to create workspace');
+    let msg = insertError?.message ?? 'Failed to create workspace';
+    if (insertError?.message?.includes('workspaces_name_format_check')) {
+      msg = 'Workspace name must be between 1 and 100 characters, trimmed, without angle brackets (<>) or control characters.';
+    }
     throw new Error(msg);
   }
 

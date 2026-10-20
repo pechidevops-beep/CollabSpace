@@ -12,6 +12,7 @@ import {
     getRepositoryById,
     getRepositoryFiles,
     renameRepositoryFile,
+    validateFileName,
 } from '../../../services/repositoryService';
 import { getWorkspaceById } from '../../../services/workspaceService';
 import {
@@ -273,7 +274,13 @@ export default function EditorPage() {
 
     const handleCreateSubmit = async (e) => {
         e.preventDefault();
-        if (!newItemName.trim()) return;
+        const name = newItemName.trim();
+        if (!name) return;
+        const validationError = validateFileName(name);
+        if (validationError) {
+            setCreateError(validationError);
+            return;
+        }
         setCreating(true);
         setCreateError('');
         try {
@@ -281,7 +288,7 @@ export default function EditorPage() {
                 const created = await createRepositoryFolder({
                     repositoryId: repoId,
                     parentId: fileFormParentId,
-                    name: newItemName.trim(),
+                    name,
                     actorId: user?.id || null,
                 });
                 setFiles(prev => [...prev, created]);
@@ -848,6 +855,9 @@ export default function EditorPage() {
                             placeholder={fileFormType === 'folder' ? 'folder-name' : 'e.g. Main.java or script.py'}
                             className="w-full h-10 px-3 rounded-[10px] bg-black/[.03] dark:bg-white/5 border border-border-subtle text-xs text-text-main focus:outline-none focus:border-accent"
                         />
+                        <p className="text-[11px] text-text-sub">
+                            1–100 characters. Letters, numbers, hyphens, underscores, dots. No slashes, '.' or '..'.
+                        </p>
                         {fileFormType === 'file' && (
                             <p className="text-[11px] text-text-sub">
                                 Note: Only Java (.java) and Python (.py) are executable in the sandbox.

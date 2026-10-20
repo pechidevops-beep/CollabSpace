@@ -32,6 +32,65 @@ async function getRepositoryWorkspaceId(repoId) {
   return data?.workspace_id ?? null;
 }
 
+export function validateRepositoryName(name) {
+  if (!name || typeof name !== 'string') {
+    return 'Repository name is required.';
+  }
+  if (name.length < 1 || name.length > 100) {
+    return 'Repository name must be between 1 and 100 characters.';
+  }
+  if (/^\.+$/.test(name)) {
+    return 'Repository name cannot consist only of dots.';
+  }
+  if (!/^[a-zA-Z0-9_\-.]+$/.test(name)) {
+    return 'Repository name can only contain letters, numbers, hyphens, underscores, and dots.';
+  }
+  if (/[\x00-\x1f\x7f]/.test(name)) {
+    return 'Repository name cannot contain control characters.';
+  }
+  return null;
+}
+
+export function validateFileName(name) {
+  if (!name || typeof name !== 'string') {
+    return 'Name is required.';
+  }
+  if (name.length < 1 || name.length > 100) {
+    return 'Name must be between 1 and 100 characters.';
+  }
+  if (name === '.' || name === '..') {
+    return 'Name cannot be "." or "..".';
+  }
+  if (name.includes('/') || name.includes('\\')) {
+    return 'Name cannot contain path separators (/ or \\).';
+  }
+  if (!/^[a-zA-Z0-9_\-.]+$/.test(name)) {
+    return 'Name can only contain letters, numbers, hyphens, underscores, and dots.';
+  }
+  if (/[\x00-\x1f\x7f]/.test(name)) {
+    return 'Name cannot contain control characters.';
+  }
+  return null;
+}
+
+export function mapRepositoryDbError(error) {
+  if (!error) return new Error('An unknown error occurred');
+  const msg = error.message || String(error);
+  if (msg.includes('repositories_name_format_check')) {
+    return new Error('Repository name must be 1 to 100 characters, using only letters, numbers, hyphens, underscores, or dots, and cannot consist solely of dots.');
+  }
+  if (msg.includes('repository_files_filename_safe_check')) {
+    return new Error('File or folder name must be 1 to 100 characters using only letters, numbers, hyphens, underscores, or dots, without slashes, and cannot be "." or "..".');
+  }
+  if (msg.includes('idx_repository_files_unique_entry') || (error.code === '23505' && msg.includes('repository_files'))) {
+    return new Error('An item with this name already exists in this folder.');
+  }
+  if (msg.includes('repository_files_content_limit_check')) {
+    return new Error('File content exceeds the maximum allowed size of 512 KB.');
+  }
+  return error instanceof Error ? error : new Error(msg);
+}
+
 export async function createRepository({
   workspaceId,
   name,
@@ -41,6 +100,11 @@ export async function createRepository({
   createdBy = null,
   defaultBranch = 'main',
 }) {
+  const validationError = validateRepositoryName(name);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const { data, error } = await supabase
     .from('repositories')
     .insert({
@@ -55,7 +119,7 @@ export async function createRepository({
     })
     .select('*')
     .maybeSingle();
-  if (error) throw error;
+  if (error) throw mapRepositoryDbError(error);
 
   try {
     await createBranch({
@@ -106,6 +170,18 @@ export async function getRepositoryFileById(fileId) {
   return data;
 }
 
+function getContentByteLength(content) {
+  if (content === null || content === undefined) return 0;
+  if (typeof content !== 'string') return 0;
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(content).length;
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.byteLength(content, 'utf8');
+  }
+  return content.length;
+}
+
 export async function createRepositoryFile({
   repoId,
   repositoryId,
@@ -117,6 +193,15 @@ export async function createRepositoryFile({
 }) {
   const actualRepoId = repoId || repositoryId;
   const actualActorId = createdBy || actorId;
+
+  const validationError = validateFileName(name);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  if (getContentByteLength(content) > 524288) {
+    throw new Error('File content exceeds the maximum allowed size of 512 KB.');
+  }
 
   const { data, error } = await supabase
     .from('repository_files')
@@ -130,7 +215,7 @@ export async function createRepositoryFile({
     })
     .select('*')
     .maybeSingle();
-  if (error) throw error;
+  if (error) throw mapRepositoryDbError(error);
 
   const workspaceId = await getRepositoryWorkspaceId(actualRepoId);
   await logActivity({
@@ -155,6 +240,11 @@ export async function createRepositoryFolder({
   const actualRepoId = repoId || repositoryId;
   const actualActorId = createdBy || actorId;
 
+  const validationError = validateFileName(name);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const { data, error } = await supabase
     .from('repository_files')
     .insert({
@@ -167,7 +257,7 @@ export async function createRepositoryFolder({
     })
     .select('*')
     .maybeSingle();
-  if (error) throw error;
+  if (error) throw mapRepositoryDbError(error);
 
   const workspaceId = await getRepositoryWorkspaceId(actualRepoId);
   await logActivity({
@@ -182,13 +272,18 @@ export async function createRepositoryFolder({
 }
 
 export async function renameRepositoryFile({ fileId, newName, actorId = null }) {
+  const validationError = validateFileName(newName);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const { data, error } = await supabase
     .from('repository_files')
     .update({ name: newName, updated_at: new Date().toISOString() })
     .eq('id', fileId)
     .select('*')
     .maybeSingle();
-  if (error) throw error;
+  if (error) throw mapRepositoryDbError(error);
   if (data?.repository_id) {
     const workspaceId = await getRepositoryWorkspaceId(data.repository_id);
     await logActivity({
@@ -208,13 +303,13 @@ export async function deleteRepositoryFile({ fileId, actorId = null }) {
     .select('id, name, repository_id')
     .eq('id', fileId)
     .maybeSingle();
-  if (fetchError) throw fetchError;
+  if (fetchError) throw mapRepositoryDbError(fetchError);
 
   const { error } = await supabase
     .from('repository_files')
     .delete()
     .eq('id', fileId);
-  if (error) throw error;
+  if (error) throw mapRepositoryDbError(error);
 
   if (file?.repository_id) {
     const workspaceId = await getRepositoryWorkspaceId(file.repository_id);
@@ -229,6 +324,10 @@ export async function deleteRepositoryFile({ fileId, actorId = null }) {
 }
 
 export async function updateRepositoryFileContent({ fileId, content, actorId = null }) {
+  if (getContentByteLength(content) > 524288) {
+    throw new Error('File content exceeds the maximum allowed size of 512 KB.');
+  }
+
   const { data, error } = await supabase
     .from('repository_files')
     .update({
@@ -238,7 +337,7 @@ export async function updateRepositoryFileContent({ fileId, content, actorId = n
     .eq('id', fileId)
     .select('*')
     .maybeSingle();
-  if (error) throw error;
+  if (error) throw mapRepositoryDbError(error);
   if (data?.repository_id) {
     const workspaceId = await getRepositoryWorkspaceId(data.repository_id);
     await logActivity({

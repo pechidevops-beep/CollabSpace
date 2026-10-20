@@ -8,7 +8,7 @@ import Input from '../../../components/ui/Input';
 import EmptyState from '../../../components/ui/EmptyState';
 import Skeleton from '../../../components/ui/Skeleton';
 import Card, { CardRow } from '../../../components/ui/Card';
-import { createRepository, getRepositories } from '../../../services/repositoryService';
+import { createRepository, getRepositories, validateRepositoryName } from '../../../services/repositoryService';
 import {
     getWorkspaceById,
     getWorkspaceMembers,
@@ -78,7 +78,13 @@ export default function WorkspacePage() {
     const handleCreateRepo = async (e) => {
         e.preventDefault();
         if (!repoName.trim()) return;
+        const validationError = validateRepositoryName(repoName.trim());
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
         setCreatingRepo(true);
+        setError('');
         try {
             if (!['owner', 'admin', 'contributor'].includes(currentRole)) {
                 throw new Error('Only owners, admins, and contributors can create repositories.');
@@ -242,6 +248,9 @@ export default function WorkspacePage() {
                                 label="Repository Name"
                                 required
                             />
+                            <p className="text-[11px] text-text-sub -mt-1.5">
+                                1–100 characters. Letters, numbers, hyphens, underscores, and dots only. Cannot consist solely of dots.
+                            </p>
                             <div className="flex flex-col gap-1.5 w-full">
                                 <label className="text-xs font-medium text-text-main">Description (optional)</label>
                                 <textarea

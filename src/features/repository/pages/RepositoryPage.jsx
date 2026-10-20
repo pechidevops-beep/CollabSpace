@@ -14,6 +14,7 @@ import {
     getRepositoryById,
     getRepositoryFiles,
     renameRepositoryFile,
+    validateFileName,
 } from '../../../services/repositoryService';
 import { getCommitHistory } from '../../../services/editorService';
 import { buildFileTree } from '../../../utils/repository';
@@ -105,6 +106,11 @@ export default function RepositoryPage() {
         e.preventDefault();
         const name = newItemName.trim();
         if (!name) { setCreateError('Name required.'); return; }
+        const validationError = validateFileName(name);
+        if (validationError) {
+            setCreateError(validationError);
+            return;
+        }
         setCreating(true);
         try {
             const fn = fileFormType === 'folder' ? createRepositoryFolder : createRepositoryFile;
@@ -253,23 +259,30 @@ export default function RepositoryPage() {
                         </div>
 
                         {fileFormOpen && (
-                            <form onSubmit={handleCreateSubmit} className="p-3 rounded-[10px] bg-surface border border-border-subtle shadow-subtle mb-3 animate-fade-in flex items-center gap-3">
-                                <span className="text-xs text-text-sub">New {fileFormType}:</span>
-                                <input
-                                    autoFocus
-                                    value={newItemName}
-                                    onChange={e => setNewItemName(e.target.value)}
-                                    className="flex-1 bg-subtle border border-border-subtle rounded-md px-2.5 py-1 text-xs text-text-main outline-none focus:border-brand"
-                                    placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.ext'}
-                                />
-                                <Button type="submit" variant="primary" size="sm" loading={creating}>
-                                    {creating ? '...' : 'Create'}
-                                </Button>
-                                <Button type="button" variant="ghost" size="sm" onClick={() => setFileFormOpen(false)}>
-                                    Cancel
-                                </Button>
-                                {createError && <span className="text-xs text-semantic-danger">{createError}</span>}
-                            </form>
+                            <div className="space-y-1 mb-3 animate-fade-in">
+                                <form onSubmit={handleCreateSubmit} className="p-3 rounded-[10px] bg-surface border border-border-subtle shadow-subtle flex items-center gap-3">
+                                    <span className="text-xs text-text-sub">New {fileFormType}:</span>
+                                    <input
+                                        autoFocus
+                                        value={newItemName}
+                                        onChange={e => setNewItemName(e.target.value)}
+                                        className="flex-1 bg-subtle border border-border-subtle rounded-md px-2.5 py-1 text-xs text-text-main outline-none focus:border-brand"
+                                        placeholder={fileFormType === 'folder' ? 'folder-name' : 'filename.ext'}
+                                    />
+                                    <Button type="submit" variant="primary" size="sm" loading={creating}>
+                                        {creating ? '...' : 'Create'}
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => setFileFormOpen(false)}>
+                                        Cancel
+                                    </Button>
+                                </form>
+                                <div className="flex items-center justify-between px-1">
+                                    <p className="text-[11px] text-text-sub">
+                                        1–100 characters. Letters, numbers, hyphens, underscores, dots. No slashes, '.' or '..'.
+                                    </p>
+                                    {createError && <span className="text-xs text-semantic-danger">{createError}</span>}
+                                </div>
+                            </div>
                         )}
 
                         <Card className="h-[400px] overflow-hidden p-0">
