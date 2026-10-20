@@ -858,3 +858,18 @@ $$;
 
 REVOKE ALL ON FUNCTION public.cleanup_expired_join_attempts() FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.cleanup_expired_join_attempts() TO authenticated;
+
+-- ============================================================================
+-- 12. REVOKE EXECUTION ON TRIGGER & INTERNAL FUNCTIONS FROM public & anon
+-- ============================================================================
+
+REVOKE ALL ON FUNCTION public.handle_workspace_created() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.generate_join_code() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.enforce_workspace_join_code() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_submission_update() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_workspace_update() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.notify_staff_on_submission() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.prevent_owner_member_delete() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_pull_request_insert() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.validate_pull_request_update() FROM PUBLIC, anon;
+
