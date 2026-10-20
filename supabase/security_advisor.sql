@@ -54,3 +54,29 @@ SELECT
 FROM information_schema.table_privileges
 WHERE grantee = 'anon'
   AND table_schema = 'public';
+
+-- ============================================================================
+-- 5. SENSITIVE TABLES WITH RLS DISABLED OR READABLE BY authenticated (Item 5)
+-- Expected: 0 rows
+-- Flags any public table holding sensitive, internal, or rate-limiting data
+-- (join_attempts, repository_files_dedup_archive) if RLS is disabled OR if
+-- authenticated has direct SELECT privileges. Also flags any public table
+-- whatsoever where RLS is disabled.
+-- ============================================================================
+SELECT
+  t.schemaname,
+  t.tablename,
+  t.rowsecurity AS rls_enabled,
+  has_table_privilege('authenticated', quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT') AS authenticated_readable,
+  'CRITICAL: Table has RLS disabled or sensitive data is directly readable by authenticated' AS audit_issue
+FROM pg_tables t
+WHERE t.schemaname = 'public'
+  AND (
+    -- Any table with RLS disabled
+    t.rowsecurity = false
+    -- OR sensitive internal tables where authenticated has SELECT access
+    OR (
+      t.tablename IN ('join_attempts', 'repository_files_dedup_archive')
+      AND has_table_privilege('authenticated', quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT')
+    )
+  );
