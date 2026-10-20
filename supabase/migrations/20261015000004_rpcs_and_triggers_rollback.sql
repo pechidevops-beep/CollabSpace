@@ -3,6 +3,9 @@
 DROP TRIGGER IF EXISTS tr_validate_pull_request_update ON public.pull_requests;
 DROP FUNCTION IF EXISTS public.validate_pull_request_update();
 
+DROP TRIGGER IF EXISTS tr_validate_pull_request_insert ON public.pull_requests;
+DROP FUNCTION IF EXISTS public.validate_pull_request_insert();
+
 DROP TRIGGER IF EXISTS tr_prevent_owner_member_delete ON public.workspace_members;
 DROP FUNCTION IF EXISTS public.prevent_owner_member_delete();
 

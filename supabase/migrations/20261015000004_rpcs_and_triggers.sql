@@ -599,8 +599,53 @@ CREATE TRIGGER tr_prevent_owner_member_delete
   EXECUTE FUNCTION public.prevent_owner_member_delete();
 
 -- ============================================================================
--- 10. PULL REQUEST STATUS / MERGED_BY UPDATE VALIDATION TRIGGER
 -- ============================================================================
+-- 10. PULL REQUEST INSERT & UPDATE VALIDATION TRIGGERS
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.validate_pull_request_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_id UUID;
+BEGIN
+  v_caller_id := auth.uid();
+  -- If executed without an authenticated user (service role, SQL editor, migrations), bypass checks
+  IF v_caller_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- 1. Non-service caller: author_id must match authenticated caller
+  IF NEW.author_id IS DISTINCT FROM v_caller_id THEN
+    RAISE EXCEPTION 'author_id must equal the authenticated caller.';
+  END IF;
+
+  -- 2. Initial status must be 'open'
+  IF NEW.status IS DISTINCT FROM 'open' THEN
+    RAISE EXCEPTION 'New pull requests must have status = ''open''.';
+  END IF;
+
+  -- 3. merged_by and merged_at must be NULL on insert
+  IF NEW.merged_by IS NOT NULL THEN
+    RAISE EXCEPTION 'merged_by must be NULL on new pull requests.';
+  END IF;
+
+  IF NEW.merged_at IS NOT NULL THEN
+    RAISE EXCEPTION 'merged_at must be NULL on new pull requests.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_validate_pull_request_insert ON public.pull_requests;
+CREATE TRIGGER tr_validate_pull_request_insert
+  BEFORE INSERT ON public.pull_requests
+  FOR EACH ROW
+  EXECUTE FUNCTION public.validate_pull_request_insert();
 
 CREATE OR REPLACE FUNCTION public.validate_pull_request_update()
 RETURNS trigger
@@ -633,8 +678,9 @@ BEGIN
 
   v_is_author := (OLD.author_id = v_caller_id);
 
-  -- Only owner/admin may set status = 'merged' and merged_by (must equal the caller) (Item 6)
-  IF (NEW.status = 'merged' OR NEW.merged_by IS NOT NULL) THEN
+  -- Evaluate merge rules ONLY when status or merged_by actually changes (Item 1)
+  IF (NEW.status IS DISTINCT FROM OLD.status AND NEW.status = 'merged')
+     OR (NEW.merged_by IS DISTINCT FROM OLD.merged_by AND NEW.merged_by IS NOT NULL) THEN
     IF NOT v_is_staff THEN
       RAISE EXCEPTION 'Permission denied. Only owners and admins can merge pull requests.';
     END IF;
@@ -644,7 +690,7 @@ BEGIN
   END IF;
 
   -- The author may open/close. Non-author non-staff cannot change status at all.
-  IF (NEW.status <> OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
+  IF (NEW.status IS DISTINCT FROM OLD.status) AND NOT (v_is_author OR v_is_staff) THEN
     RAISE EXCEPTION 'Only the pull request author or workspace staff can change status.';
   END IF;
 

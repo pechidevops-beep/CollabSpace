@@ -558,7 +558,48 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
   test('19. Prove: pull request merge permissions and merged_by enforcement (Item 6)', async (t) => {
     if (!SERVICE_ROLE_KEY) return t.skip('Requires live test environment credentials');
 
-    // Student A creates a PR on their repo
+    // 1. BEFORE INSERT guards:
+    // Spoofing author_id must fail
+    const { error: spoofAuthorErr } = await clients.studentA
+      .from('pull_requests')
+      .insert({
+        repository_id: studentARepo.id,
+        title: 'Spoofed Author PR',
+        author_id: users.owner.id,
+        source_branch: 'feature',
+        target_branch: 'main',
+        status: 'open',
+      });
+    assert.ok(spoofAuthorErr !== null, 'Inserting PR with spoofed author_id must fail');
+
+    // Inserting with status = 'merged' must fail
+    const { error: insertMergedErr } = await clients.studentA
+      .from('pull_requests')
+      .insert({
+        repository_id: studentARepo.id,
+        title: 'Pre-merged PR',
+        author_id: users.studentA.id,
+        source_branch: 'feature',
+        target_branch: 'main',
+        status: 'merged',
+      });
+    assert.ok(insertMergedErr !== null, 'Inserting PR with non-open status must fail');
+
+    // Inserting with non-null merged_by must fail
+    const { error: insertMergedByErr } = await clients.studentA
+      .from('pull_requests')
+      .insert({
+        repository_id: studentARepo.id,
+        title: 'Tampered merged_by PR',
+        author_id: users.studentA.id,
+        source_branch: 'feature',
+        target_branch: 'main',
+        status: 'open',
+        merged_by: users.studentA.id,
+      });
+    assert.ok(insertMergedByErr !== null, 'Inserting PR with merged_by set must fail');
+
+    // Student A creates a valid PR on their repo
     const { data: pr, error: prErr } = await clients.studentA
       .from('pull_requests')
       .insert({
@@ -606,5 +647,12 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
       .update({ merged_by: users.studentA.id })
       .eq('id', pr.id);
     assert.ok(spoofMergeErr !== null, 'merged_by must equal authenticated caller');
+
+    // Updating a PR description/title when already merged should succeed without re-evaluating merge rules
+    const { error: postMergeEditErr } = await clients.owner
+      .from('pull_requests')
+      .update({ title: 'Feature implementation PR (Final)' })
+      .eq('id', pr.id);
+    assert.equal(postMergeEditErr, null, 'Editing already-merged PR title should not trigger merge error');
   });
 });
