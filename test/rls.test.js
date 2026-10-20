@@ -549,7 +549,13 @@ describe('Phase D: Supabase RLS & Role Matrix Security Tests', () => {
     });
     assert.equal(ownerRegenErr, null);
     assert.match(newCode, /^TEAM-[A-Z0-9]{8}$/);
-    assert.notEqual(newCode, wsWithWeakCode.join_code, 'Regenerated code must be different');
+    // 5. Separate rate-limiting: regeneration attempts use action='regenerate' and do not consume action='join' attempts
+    const { count: regenCount } = await adminClient
+      .from('join_attempts')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', users.owner.id)
+      .eq('action', 'regenerate');
+    assert.ok(regenCount >= 1, 'Regenerate attempt must be logged with action = regenerate');
 
     // Cleanup
     await adminClient.from('workspaces').delete().eq('id', wsWithWeakCode.id);

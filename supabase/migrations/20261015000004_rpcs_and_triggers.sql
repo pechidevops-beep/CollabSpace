@@ -34,6 +34,16 @@ DROP POLICY IF EXISTS "workspace_members_insert_self" ON public.workspace_member
 -- 2. SQL JOIN CODE GENERATOR & REGENERATION
 -- ============================================================================
 
+-- Join code generator:
+-- Alphabet (32 chars): '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+-- Confusable characters omitted: '0' (zero), 'O' (letter O), '1' (one), 'I' (letter I)
+-- Code format: 'TEAM-XXXXXXXX' (8 random characters from alphabet)
+-- Entropy calculation:
+--   - Alphabet length: N = 32 (5 bits per character)
+--   - Code length: k = 8 characters
+--   - Bits of entropy = 8 * log2(32) = 8 * 5 = 40.0 bits
+--   - Total unique combinations: 32^8 = 1,099,511,627,776 (> 1.099 trillion)
+--   - Randomness source: extensions.gen_random_bytes(8) (cryptographically secure)
 CREATE OR REPLACE FUNCTION public.generate_join_code()
 RETURNS text
 LANGUAGE plpgsql
@@ -41,7 +51,7 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_chars text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  v_chars text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   v_code text;
   v_rand bytea;
   v_i int;
@@ -63,6 +73,22 @@ END;
 $$;
 
 ALTER TABLE public.workspaces ALTER COLUMN join_code SET DEFAULT public.generate_join_code();
+
+-- Rate-limiting table for join and regeneration attempts
+CREATE TABLE IF NOT EXISTS public.join_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  action TEXT NOT NULL DEFAULT 'join',
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.join_attempts ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT 'join';
+
+DROP INDEX IF EXISTS public.idx_join_attempts_user_time;
+CREATE INDEX IF NOT EXISTS idx_join_attempts_user_action_time ON public.join_attempts (user_id, action, attempted_at DESC);
+
+ALTER TABLE public.join_attempts ENABLE ROW LEVEL SECURITY;
+-- No client policies on join_attempts: access strictly through SECURITY DEFINER RPC
 
 -- BEFORE INSERT trigger that overrides any client-supplied join_code (Item 3)
 CREATE OR REPLACE FUNCTION public.enforce_workspace_join_code()
@@ -124,19 +150,20 @@ BEGIN
     RAISE EXCEPTION 'Permission denied. Only owners and admins can regenerate join codes.';
   END IF;
 
-  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user
+  -- 2. Rate limiting: max 10 regenerations per 10 minutes per user (separate from join attempts)
   SELECT count(*)
   INTO v_recent_attempts
   FROM public.join_attempts
   WHERE user_id = v_caller_id
+    AND action = 'regenerate'
     AND attempted_at > (now() - interval '10 minutes');
 
   IF v_recent_attempts >= 10 THEN
     RAISE EXCEPTION 'Too many join code requests. Please try again later.';
   END IF;
 
-  INSERT INTO public.join_attempts (user_id, attempted_at)
-  VALUES (v_caller_id, now());
+  INSERT INTO public.join_attempts (user_id, action, attempted_at)
+  VALUES (v_caller_id, 'regenerate', now());
 
   -- 3. Generate new code and update workspace with authorization flag
   v_new_code := public.generate_join_code();
@@ -162,17 +189,6 @@ GRANT EXECUTE ON FUNCTION public.regenerate_join_code(UUID) TO authenticated;
 -- 3. RATE-LIMITED JOIN WORKSPACE RPC
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS public.join_attempts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_join_attempts_user_time ON public.join_attempts (user_id, attempted_at DESC);
-
-ALTER TABLE public.join_attempts ENABLE ROW LEVEL SECURITY;
--- No client policies on join_attempts: access strictly through SECURITY DEFINER RPC
-
 CREATE OR REPLACE FUNCTION public.join_workspace(code text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -195,11 +211,12 @@ BEGIN
   DELETE FROM public.join_attempts
   WHERE attempted_at < (now() - interval '1 day');
 
-  -- 1. Rate limit: max 10 attempts per 10 minutes per user
+  -- 1. Rate limit: max 10 attempts per 10 minutes per user (tracked separately via action = 'join')
   SELECT count(*)
   INTO v_recent_attempts
   FROM public.join_attempts
   WHERE user_id = v_user_id
+    AND action = 'join'
     AND attempted_at > (now() - interval '10 minutes');
 
   IF v_recent_attempts >= 10 THEN
@@ -207,8 +224,8 @@ BEGIN
   END IF;
 
   -- Record attempt
-  INSERT INTO public.join_attempts (user_id, attempted_at)
-  VALUES (v_user_id, now());
+  INSERT INTO public.join_attempts (user_id, action, attempted_at)
+  VALUES (v_user_id, 'join', now());
 
   -- 2. Validate format and lookup workspace
   v_clean_code := upper(trim(code));
