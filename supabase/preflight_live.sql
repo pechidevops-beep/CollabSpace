@@ -9,7 +9,7 @@
 -- ============================================================================
 
 -- 1. Check workspace names
--- Criteria: 1-100 characters, trimmed, no control characters or angle brackets (<>)
+-- Criteria: 1-100 characters, trimmed, no control characters via [[:cntrl:]] or angle brackets (<>)
 -- (Allows Unicode letters, digits, spaces, common punctuation. "My Workspace" is valid)
 SELECT
   'INVALID WORKSPACE NAME' AS check_name,
@@ -24,10 +24,10 @@ WHERE name IS NULL
    OR trim(name) <> name
    OR name LIKE '%<%'
    OR name LIKE '%>%'
-   OR name ~ '[\x00-\x1f\x7f]';
+   OR name ~ '[[:cntrl:]]';
 
 -- 2. Check repository names
--- Criteria: 1-100 characters, alphanumeric, hyphens, underscores, dots (no spaces)
+-- Criteria: 1-100 characters, alphanumeric, hyphens, underscores, dots (no spaces, no dot-only names)
 SELECT
   'INVALID REPOSITORY NAME' AS check_name,
   id,
@@ -38,7 +38,8 @@ FROM public.repositories
 WHERE name IS NULL
    OR char_length(name) < 1
    OR char_length(name) > 100
-   OR name !~ '^[a-zA-Z0-9_\-\.]+$';
+   OR name !~ '^[a-zA-Z0-9_\-\.]+$'
+   OR name ~ '^\.+$';
 
 -- 3. Check repositories with NULL created_by
 -- (Important for classroom repository isolation)
@@ -65,16 +66,34 @@ WHERE NOT EXISTS (
     AND wm.role = 'owner'
 );
 
--- 5. Check duplicate sibling file names in repository_files
--- (Must be unique within repository + branch + parent folder)
+-- 5a. Check duplicate sibling FOLDERS (FATAL - BLOCKS MIGRATION 5)
+-- (Duplicate folders require manual resolution; Migration 5 will abort if any exist)
 SELECT
-  'DUPLICATE SIBLING FILES' AS check_name,
+  'DUPLICATE SIBLING FOLDERS (BLOCKS MIGRATION 5)' AS check_name,
   repository_id,
   COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid) AS branch_id,
   COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid) AS parent_id,
   name,
   count(*) AS duplicate_count
 FROM public.repository_files
+WHERE is_folder = true
+GROUP BY
+  repository_id,
+  COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  name
+HAVING count(*) > 1;
+
+-- 5b. Check duplicate sibling FILES (AUTOMATICALLY ARCHIVED & DEDUPED IN MIGRATION 5)
+SELECT
+  'DUPLICATE SIBLING FILES (AUTO-RESOLVED)' AS check_name,
+  repository_id,
+  COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid) AS branch_id,
+  COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid) AS parent_id,
+  name,
+  count(*) AS duplicate_count
+FROM public.repository_files
+WHERE coalesce(is_folder, false) = false
 GROUP BY
   repository_id,
   COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -93,7 +112,7 @@ FROM public.repository_files
 WHERE octet_length(content) > 524288;
 
 -- 7. Check file names violating safePath rules
--- (Cannot contain '/', '\', '.', '..', control characters, or exceed 100 chars)
+-- (Cannot contain '/', '\', '.', '..', control characters via [[:cntrl:]], or exceed 100 chars)
 SELECT
   'UNSAFE FILE NAME' AS check_name,
   id,
@@ -104,7 +123,7 @@ WHERE name LIKE '%/%'
    OR name LIKE '%\%'
    OR name = '.'
    OR name = '..'
-   OR name ~ '[\x00-\x1f\x7f]'
+   OR name ~ '[[:cntrl:]]'
    OR char_length(name) < 1
    OR char_length(name) > 100;
 

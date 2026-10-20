@@ -17,23 +17,86 @@ CREATE INDEX IF NOT EXISTS idx_commits_branch ON public.commits USING btree (bra
 CREATE INDEX IF NOT EXISTS idx_submissions_repository ON public.submissions USING btree (repository_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace_created ON public.activities USING btree (workspace_id, created_at DESC);
 
--- Clean up any legacy duplicate sibling files (keeping the most recently updated row)
-DELETE FROM public.repository_files
-WHERE id IN (
-  SELECT id
-  FROM (
-    SELECT id,
-           ROW_NUMBER() OVER (
-             PARTITION BY repository_id,
-                          COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
-                          COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
-                          name
-             ORDER BY updated_at DESC NULLS LAST, id DESC
-           ) AS rnum
-    FROM public.repository_files
-  ) t
-  WHERE t.rnum > 1
+-- Create archive table for deleted duplicate files
+CREATE TABLE IF NOT EXISTS public.repository_files_dedup_archive (
+  archive_id BIGSERIAL PRIMARY KEY,
+  archived_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  id UUID,
+  repository_id UUID,
+  branch_id UUID,
+  parent_id UUID,
+  name TEXT,
+  content TEXT,
+  is_folder BOOLEAN,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
 );
+
+-- Deduplication (Item 2):
+-- If duplicate FOLDERS exist (is_folder = true), RAISE EXCEPTION and abort transaction.
+-- For duplicate FILES (is_folder IS NOT TRUE), copy to archive table first, then delete.
+DO $$
+DECLARE
+  v_dup_folders TEXT;
+  v_dup_files_count INT := 0;
+BEGIN
+  -- A. Check for duplicate FOLDERS (is_folder = true)
+  SELECT string_agg(
+    format('repo=%s branch=%s parent=%s name="%s" (count=%s)',
+           repository_id,
+           coalesce(branch_id::text, 'null'),
+           coalesce(parent_id::text, 'null'),
+           name,
+           count(*)),
+    E'\n  '
+  )
+  INTO v_dup_folders
+  FROM public.repository_files
+  WHERE is_folder = true
+  GROUP BY repository_id, branch_id, parent_id, name
+  HAVING count(*) > 1;
+
+  IF v_dup_folders IS NOT NULL THEN
+    RAISE EXCEPTION E'Migration 5 aborted: Duplicate sibling FOLDERS detected. Manual resolution required:\n  %', v_dup_folders;
+  END IF;
+
+  -- B. Copy duplicate FILES (is_folder IS NOT TRUE) to repository_files_dedup_archive
+  WITH dup_file_candidates AS (
+    SELECT id
+    FROM (
+      SELECT id,
+             ROW_NUMBER() OVER (
+               PARTITION BY repository_id,
+                            COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                            COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                            name
+               ORDER BY updated_at DESC NULLS LAST, id DESC
+             ) AS rnum
+      FROM public.repository_files
+      WHERE coalesce(is_folder, false) = false
+    ) t
+    WHERE t.rnum > 1
+  ),
+  archived AS (
+    INSERT INTO public.repository_files_dedup_archive (
+      id, repository_id, branch_id, parent_id, name, content, is_folder, created_at, updated_at
+    )
+    SELECT
+      rf.id, rf.repository_id, rf.branch_id, rf.parent_id, rf.name, rf.content, rf.is_folder, rf.created_at, rf.updated_at
+    FROM public.repository_files rf
+    JOIN dup_file_candidates dfc ON dfc.id = rf.id
+    RETURNING 1
+  )
+  -- C. Delete duplicate FILES only
+  DELETE FROM public.repository_files
+  WHERE id IN (SELECT id FROM dup_file_candidates);
+
+  GET DIAGNOSTICS v_dup_files_count = ROW_COUNT;
+  IF v_dup_files_count > 0 THEN
+    RAISE NOTICE 'Migration 5: Archived and deleted % duplicate file(s) into repository_files_dedup_archive.', v_dup_files_count;
+  END IF;
+END;
+$$;
 
 -- Unique index on repository files to prevent sibling collisions within the same directory / branch
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.repository_files (
@@ -48,7 +111,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_files_unique_entry ON public.re
 -- ============================================================================
 
 -- Workspace names: allow Unicode letters/digits/spaces/common punctuation
--- (length 1-100, trimmed, no control characters or angle brackets) (Item 5)
+-- (length 1-100, trimmed, no control characters via [[:cntrl:]] or angle brackets) (Items 3, 5)
 ALTER TABLE public.workspaces
   DROP CONSTRAINT IF EXISTS workspaces_name_format_check,
   ADD CONSTRAINT workspaces_name_format_check
@@ -58,7 +121,7 @@ ALTER TABLE public.workspaces
     trim(name) = name AND
     name NOT LIKE '%<%' AND
     name NOT LIKE '%>%' AND
-    name !~ '[\x00-\x1f\x7f]'
+    name !~ '[[:cntrl:]]'
   ) NOT VALID;
 
 -- Workspace join codes: uppercase alphanumeric TEAM-XXXXXXXX (Item 3)
@@ -67,17 +130,18 @@ ALTER TABLE public.workspaces
   ADD CONSTRAINT workspaces_join_code_format_check
   CHECK (join_code ~ '^TEAM-[A-Z0-9]{8}$') NOT VALID;
 
--- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars)
+-- Repository name: strict ASCII alphanumeric, hyphens, underscores, dots (no spaces; 1-100 chars, no dot-only names) (Item 3)
 ALTER TABLE public.repositories
   DROP CONSTRAINT IF EXISTS repositories_name_format_check,
   ADD CONSTRAINT repositories_name_format_check
   CHECK (
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
-    name ~ '^[a-zA-Z0-9_\-\.]+$'
+    name ~ '^[a-zA-Z0-9_\-\.]+$' AND
+    name !~ '^\.+$'
   ) NOT VALID;
 
--- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars, no control chars via [[:cntrl:]]) (Item 3)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -88,7 +152,8 @@ ALTER TABLE public.repository_files
     name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
-    name ~ '^[a-zA-Z0-9_\-\.]+$'
+    name ~ '^[a-zA-Z0-9_\-\.]+$' AND
+    name !~ '[[:cntrl:]]'
   ) NOT VALID;
 
 -- File content size limit (512 KB = 524,288 bytes)

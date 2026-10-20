@@ -26,6 +26,9 @@ ALTER TABLE public.repositories DROP CONSTRAINT IF EXISTS repositories_name_form
 ALTER TABLE public.workspaces DROP CONSTRAINT IF EXISTS workspaces_join_code_format_check;
 ALTER TABLE public.workspaces DROP CONSTRAINT IF EXISTS workspaces_name_format_check;
 
+-- Drop dedup archive table
+DROP TABLE IF EXISTS public.repository_files_dedup_archive CASCADE;
+
 -- Drop unique index and new indexes
 DROP INDEX IF EXISTS public.idx_repository_files_unique_entry;
 DROP INDEX IF EXISTS public.idx_activities_workspace_created;
