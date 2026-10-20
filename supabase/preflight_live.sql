@@ -76,7 +76,7 @@ SELECT
   name,
   count(*) AS duplicate_count
 FROM public.repository_files
-WHERE is_folder = true
+WHERE type = 'folder'
 GROUP BY
   repository_id,
   COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -93,7 +93,7 @@ SELECT
   name,
   count(*) AS duplicate_count
 FROM public.repository_files
-WHERE coalesce(is_folder, false) = false
+WHERE type = 'file'
 GROUP BY
   repository_id,
   COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -112,7 +112,7 @@ FROM public.repository_files
 WHERE octet_length(content) > 524288;
 
 -- 7. Check file names violating safePath rules
--- (Cannot contain '/', '\', '.', '..', control characters via [[:cntrl:]], or exceed 100 chars)
+-- (Cannot contain '/', '.', '..', control characters via [[:cntrl:]], or violate ^[a-zA-Z0-9_\-\.]+$)
 SELECT
   'UNSAFE FILE NAME' AS check_name,
   id,
@@ -120,9 +120,9 @@ SELECT
   name
 FROM public.repository_files
 WHERE name LIKE '%/%'
-   OR name LIKE '%\%'
    OR name = '.'
    OR name = '..'
+   OR name !~ '^[a-zA-Z0-9_\-\.]+$'
    OR name ~ '[[:cntrl:]]'
    OR char_length(name) < 1
    OR char_length(name) > 100;

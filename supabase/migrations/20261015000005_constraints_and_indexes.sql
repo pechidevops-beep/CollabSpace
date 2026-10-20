@@ -26,41 +26,61 @@ CREATE TABLE IF NOT EXISTS public.repository_files_dedup_archive (
   branch_id UUID,
   parent_id UUID,
   name TEXT,
+  type TEXT,
   content TEXT,
-  is_folder BOOLEAN,
+  size_bytes BIGINT,
+  created_by UUID,
   created_at TIMESTAMPTZ,
-  updated_at TIMESTAMPTZ
+  updated_at TIMESTAMPTZ,
+  last_modified_at TIMESTAMPTZ,
+  author_id UUID
 );
 
--- Deduplication (Item 2):
--- If duplicate FOLDERS exist (is_folder = true), RAISE EXCEPTION and abort transaction.
--- For duplicate FILES (is_folder IS NOT TRUE), copy to archive table first, then delete.
+-- Enable RLS and revoke all client access from anon and authenticated (Item 5)
+ALTER TABLE public.repository_files_dedup_archive ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.repository_files_dedup_archive FROM anon, authenticated;
+
+-- Deduplication (Item 1, 2):
+-- If duplicate FOLDERS exist (type = 'folder'), RAISE EXCEPTION and abort transaction.
+-- For duplicate FILES (type = 'file'), copy to archive table first, then delete.
 DO $$
 DECLARE
   v_dup_folders TEXT;
   v_dup_files_count INT := 0;
 BEGIN
-  -- A. Check for duplicate FOLDERS (is_folder = true)
+  -- A. Check for duplicate FOLDERS (type = 'folder')
   SELECT string_agg(
     format('repo=%s branch=%s parent=%s name="%s" (count=%s)',
            repository_id,
            coalesce(branch_id::text, 'null'),
            coalesce(parent_id::text, 'null'),
            name,
-           count(*)),
+           dup_count),
     E'\n  '
   )
   INTO v_dup_folders
-  FROM public.repository_files
-  WHERE is_folder = true
-  GROUP BY repository_id, branch_id, parent_id, name
-  HAVING count(*) > 1;
+  FROM (
+    SELECT
+      repository_id,
+      COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid) AS branch_id,
+      COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid) AS parent_id,
+      name,
+      count(*) AS dup_count
+    FROM public.repository_files
+    WHERE type = 'folder'
+    GROUP BY
+      repository_id,
+      COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid),
+      COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid),
+      name
+    HAVING count(*) > 1
+  ) dups;
 
   IF v_dup_folders IS NOT NULL THEN
     RAISE EXCEPTION E'Migration 5 aborted: Duplicate sibling FOLDERS detected. Manual resolution required:\n  %', v_dup_folders;
   END IF;
 
-  -- B. Copy duplicate FILES (is_folder IS NOT TRUE) to repository_files_dedup_archive
+  -- B. Copy duplicate FILES (type = 'file') to repository_files_dedup_archive
   WITH dup_file_candidates AS (
     SELECT id
     FROM (
@@ -73,16 +93,16 @@ BEGIN
                ORDER BY updated_at DESC NULLS LAST, id DESC
              ) AS rnum
       FROM public.repository_files
-      WHERE coalesce(is_folder, false) = false
+      WHERE type = 'file'
     ) t
     WHERE t.rnum > 1
   ),
   archived AS (
     INSERT INTO public.repository_files_dedup_archive (
-      id, repository_id, branch_id, parent_id, name, content, is_folder, created_at, updated_at
+      id, repository_id, branch_id, parent_id, name, type, content, size_bytes, created_by, created_at, updated_at, last_modified_at, author_id
     )
     SELECT
-      rf.id, rf.repository_id, rf.branch_id, rf.parent_id, rf.name, rf.content, rf.is_folder, rf.created_at, rf.updated_at
+      rf.id, rf.repository_id, rf.branch_id, rf.parent_id, rf.name, rf.type, rf.content, rf.size_bytes, rf.created_by, rf.created_at, rf.updated_at, rf.last_modified_at, rf.author_id
     FROM public.repository_files rf
     JOIN dup_file_candidates dfc ON dfc.id = rf.id
     RETURNING 1
@@ -141,7 +161,7 @@ ALTER TABLE public.repositories
     name !~ '^\.+$'
   ) NOT VALID;
 
--- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars, no control chars via [[:cntrl:]]) (Item 3)
+-- Repository file names: strict ASCII, no path separators or traversal segments (1-100 chars, no control chars via [[:cntrl:]]) (Item 3, 6)
 ALTER TABLE public.repository_files
   DROP CONSTRAINT IF EXISTS repository_files_filename_safe_check,
   ADD CONSTRAINT repository_files_filename_safe_check
@@ -149,7 +169,6 @@ ALTER TABLE public.repository_files
     char_length(name) >= 1 AND
     char_length(name) <= 100 AND
     name NOT LIKE '%/%' AND
-    name NOT LIKE '%\%' AND
     name <> '.' AND
     name <> '..' AND
     name ~ '^[a-zA-Z0-9_\-\.]+$' AND
